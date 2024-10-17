@@ -18,10 +18,19 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install deps
-        run: | 
+      - name: Install Poetry
+        run: |
           curl -sSL https://install.python-poetry.org | python3 -
-          poetry install --with dev 
+          echo "::add-path::$HOME/.local/bin"
+          poetry self add poetry-plugin-export
+
+      - name: Install dependencies
+        run: |
+          poetry install --with dev
+
+      - name: Export requirements.txt
+        run: |
+          poetry export -f requirements.txt --output src/android_genymotion_backend/requirements.txt --without-hashes
 
       - name: Deploy to Production
         env:
@@ -29,6 +38,5 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
         run: |
-          poetry shell
           cd infra
-          cdk deploy --require-approval never -c stage=production
+          poetry run cdk deploy --require-approval never -c stage=production

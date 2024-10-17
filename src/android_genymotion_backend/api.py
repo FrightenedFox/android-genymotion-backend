@@ -9,6 +9,7 @@ from schemas import (
     Game,
     Video,
 )
+from mangum import Mangum
 
 app = FastAPI()
 
@@ -164,8 +165,9 @@ def get_videos_by_game(game_id: str) -> List[Video]:
     return items
 
 
+handler = Mangum(app)
+
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="localhost", port=8000)
-ż
