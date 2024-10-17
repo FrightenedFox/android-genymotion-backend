@@ -150,3 +150,9 @@ def get_videos_by_game(game_id: str) -> List[Video]:
     """
     items = video_model.get_videos_by_game_id(game_id)
     return items
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="localhost", port=8000)

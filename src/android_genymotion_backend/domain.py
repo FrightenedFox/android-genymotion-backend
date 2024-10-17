@@ -16,7 +16,14 @@ import logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-dynamodb = boto3.resource('dynamodb')
+# typical console logger handler
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+
+dynamodb = boto3.resource("dynamodb")
 
 # Define a TypeVar for the item type
 T = TypeVar("T")
@@ -92,27 +99,27 @@ class DynamoDBModel(Generic[T]):
 
 class InstanceModel:
     def __init__(self):
-        self.ec2 = boto3.client('ec2')
+        self.ec2 = boto3.client("ec2")
 
     def create_instance(self) -> InstanceInfo:
         try:
             response = self.ec2.run_instances(
-                ImageId='ami-xxxxxxxxxxxxxxxxx',  # Replace with your AMI ID
-                InstanceType='t2.micro',  # Default instance type
+                ImageId="ami-0f608f5544f94803b",
+                InstanceType="c6g.xlarge",
+                KeyName="android-vms-project-europe",
+                SecurityGroupIds=["sg-082c79721016868d3"],
+                SubnetId="subnet-0a2abcedb92aba9e1",
                 MinCount=1,
                 MaxCount=1,
-                # Additional parameters as needed
             )
-            instance = response['Instances'][0]
-            instance_id = instance['InstanceId']
-            instance_type = instance['InstanceType']
-            state = instance['State']['Name']
+            instance = response["Instances"][0]
+            instance_id = instance["InstanceId"]
+            instance_type = instance["InstanceType"]
+            instance_state = instance["State"]["Name"]
             instance_info = InstanceInfo(
-                instance_id=instance_id,
-                instance_type=instance_type,
-                state=state
+                instance_id=instance_id, instance_type=instance_type, instance_state=instance_state
             )
-            logger.info(f"Created EC2 instance {instance_id} with state {state}")
+            logger.info(f"Created EC2 instance {instance_id} with state {instance_state}")
             return instance_info
         except (BotoCoreError, ClientError) as e:
             logger.error(f"Error creating EC2 instance: {e}")
@@ -126,20 +133,20 @@ class InstanceModel:
             logger.error(f"Error terminating EC2 instance {instance_id}: {e}")
             raise
 
-    def get_instance_state(self, instance_id: str) -> str:
+    def get_instance_state(self, instance_id: str) -> str | None:
         try:
             response = self.ec2.describe_instances(InstanceIds=[instance_id])
-            reservations = response['Reservations']
+            reservations = response["Reservations"]
             if not reservations:
                 logger.warning(f"Instance {instance_id} not found; assuming 'terminated'")
-                return 'terminated'
-            instance = reservations[0]['Instances'][0]
-            state = instance['State']['Name']
+                return "terminated"
+            instance = reservations[0]["Instances"][0]
+            state = instance["State"]["Name"]
             logger.info(f"Instance {instance_id} is in state {state}")
             return state
         except (BotoCoreError, ClientError) as e:
             logger.error(f"Error getting state for EC2 instance {instance_id}: {e}")
-            raise
+            return None
 
 
 # Session domain class
@@ -158,7 +165,6 @@ class SessionModel(DynamoDBModel[Session]):
                 PK=self.partition_key_value,
                 SK=session_id,
                 instance=instance_info,
-                instance_state='initializing',
                 user_ip=user_ip,
                 browser_info=browser_info,
                 start_time=datetime.now().isoformat(),
@@ -196,16 +202,16 @@ class SessionModel(DynamoDBModel[Session]):
             if session and session.instance:
                 instance_id = session.instance.instance_id
                 instance_model = InstanceModel()
-                state = instance_model.get_instance_state(instance_id)
+                session.instance.instance_state = instance_model.get_instance_state(instance_id)
                 self.table.update_item(
                     Key={
                         self.partition_key_name: self.partition_key_value,
                         self.sort_key_name: session_id,
                     },
-                    UpdateExpression="SET instance_state = :state",
-                    ExpressionAttributeValues={":state": state},
+                    UpdateExpression="SET instance = :instance",
+                    ExpressionAttributeValues={":instance": session.instance.model_dump()},
                 )
-                logger.info(f"Updated instance state for session {session_id} to {state}")
+                logger.info(f"Updated instance state for session {session_id} to {session.instance.instance_state}")
         except Exception as e:
             logger.error(f"Error updating instance state for session {session_id}: {e}")
             raise
@@ -282,7 +288,8 @@ class VideoModel(DynamoDBModel[Video]):
         try:
             response = self.table.query(
                 IndexName=self.gsi1_name,
-                KeyConditionExpression=Key(self.gsi1pk_name).eq(self.gsi1pk_value) & Key(self.gsi1sk_name).eq(session_id),
+                KeyConditionExpression=Key(self.gsi1pk_name).eq(self.gsi1pk_value)
+                & Key(self.gsi1sk_name).eq(session_id),
             )
             items = response.get("Items", [])
             logger.info(f"Retrieved {len(items)} videos for session {session_id}")

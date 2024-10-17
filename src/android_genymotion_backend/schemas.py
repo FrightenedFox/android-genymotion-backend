@@ -8,7 +8,7 @@ from datetime import datetime
 class InstanceInfo(BaseModel):
     instance_id: str
     instance_type: str
-    state: str  # e.g., "pending", "running"
+    instance_state: str | None  # e.g., "initializing", "pending", "running"
     # Add other fields as needed
 
 # Schema for Session entity
@@ -16,7 +16,6 @@ class Session(BaseModel):
     PK: str = "SESSION"  # Partition key
     SK: str  # Sort key (KSUID)
     instance: InstanceInfo  # Include the instance info
-    instance_state: str  # Instance state, e.g., "initializing"
     user_ip: Optional[str] = None
     browser_info: Optional[str] = None
     start_time: str  # Store datetime as ISO-formatted string
