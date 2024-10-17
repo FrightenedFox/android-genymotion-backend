@@ -20,13 +20,14 @@ session_model = SessionModel()
 game_model = GameModel()
 video_model = VideoModel()
 
+
 # Route to launch EC2 instance
 @app.post("/launch-instance")
 def launch_instance(request: LaunchInstanceRequest) -> dict:
     """
     Launch an EC2 instance based on the provided AMI ID.
     """
-    ec2 = boto3.client('ec2')
+    ec2 = boto3.client("ec2")
     try:
         response = ec2.run_instances(
             ImageId=request.ami_id,
@@ -37,10 +38,11 @@ def launch_instance(request: LaunchInstanceRequest) -> dict:
             MinCount=request.min_count,
             MaxCount=request.max_count,
         )
-        instance_ids = [instance['InstanceId'] for instance in response['Instances']]
-        return {'instance_ids': instance_ids}
+        instance_ids = [instance["InstanceId"] for instance in response["Instances"]]
+        return {"instance_ids": instance_ids}
     except (BotoCoreError, ClientError) as e:
         raise HTTPException(status_code=400, detail=str(e))
+
 
 # Session endpoints
 @app.get("/sessions", response_model=List[Session])
@@ -51,6 +53,7 @@ def get_all_sessions() -> List[Session]:
     items = session_model.get_all_items()
     return items
 
+
 @app.get("/sessions/{session_id}", response_model=Session)
 def get_session(session_id: str) -> Session:
     """
@@ -60,6 +63,7 @@ def get_session(session_id: str) -> Session:
     if not item:
         raise HTTPException(status_code=404, detail="Session not found")
     return item
+
 
 @app.post("/sessions", response_model=Session)
 def create_session(request: CreateSessionRequest) -> Session:
@@ -73,6 +77,7 @@ def create_session(request: CreateSessionRequest) -> Session:
     )
     return session
 
+
 @app.post("/sessions/{session_id}/end")
 def end_session(session_id: str) -> dict:
     """
@@ -80,6 +85,7 @@ def end_session(session_id: str) -> dict:
     """
     session_model.end_session(session_id)
     return {"message": f"Session {session_id} ended."}
+
 
 # Game endpoints
 @app.get("/games", response_model=List[Game])
@@ -90,6 +96,7 @@ def get_all_games() -> List[Game]:
     items = game_model.get_all_items()
     return items
 
+
 @app.get("/games/{game_id}", response_model=Game)
 def get_game(game_id: str) -> Game:
     """
@@ -99,6 +106,7 @@ def get_game(game_id: str) -> Game:
     if not item:
         raise HTTPException(status_code=404, detail="Game not found")
     return item
+
 
 @app.post("/games", response_model=Game)
 def create_game(request: CreateGameRequest) -> Game:
@@ -112,6 +120,7 @@ def create_game(request: CreateGameRequest) -> Game:
     )
     return game
 
+
 # Video endpoints
 @app.get("/videos", response_model=List[Video])
 def get_all_videos() -> List[Video]:
@@ -120,6 +129,7 @@ def get_all_videos() -> List[Video]:
     """
     items = video_model.get_all_items()
     return items
+
 
 @app.get("/videos/{video_id}", response_model=Video)
 def get_video(video_id: str) -> Video:
@@ -130,6 +140,7 @@ def get_video(video_id: str) -> Video:
     if not item:
         raise HTTPException(status_code=404, detail="Video not found")
     return item
+
 
 @app.post("/videos", response_model=Video)
 def create_video(request: CreateVideoRequest) -> Video:
@@ -145,6 +156,7 @@ def create_video(request: CreateVideoRequest) -> Video:
     )
     return video
 
+
 # Endpoint to get all videos for a given session
 @app.get("/videos/session/{session_id}", response_model=List[Video])
 def get_videos_by_session(session_id: str) -> List[Video]:
@@ -154,6 +166,7 @@ def get_videos_by_session(session_id: str) -> List[Video]:
     items = video_model.get_videos_by_session_id(session_id)
     return items
 
+
 # Endpoint to get all videos for a given game
 @app.get("/videos/game/{game_id}", response_model=List[Video])
 def get_videos_by_game(game_id: str) -> List[Video]:
@@ -162,3 +175,9 @@ def get_videos_by_game(game_id: str) -> List[Video]:
     """
     items = video_model.get_videos_by_game_id(game_id)
     return items
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="localhost", port=8000)
