@@ -37,6 +37,12 @@ def launch_instance(request: LaunchInstanceRequest) -> dict:
             SubnetId=request.subnet_id,
             MinCount=request.min_count,
             MaxCount=request.max_count,
+            # TagSpecifications=[
+            #     {
+            #         "ResourceType": "instance",
+            #         "Tags": [{"Key": "Name", "Value": "android-vm"}],
+            #     }
+            # ],
         )
         instance_ids = [instance["InstanceId"] for instance in response["Instances"]]
         return {"instance_ids": instance_ids}

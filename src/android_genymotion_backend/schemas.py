@@ -38,10 +38,10 @@ class Video(BaseModel):
 # Request schemas for API endpoints
 class LaunchInstanceRequest(BaseModel):
     ami_id: str
-    instance_type: str = "t2.micro"
-    key_name: Optional[str] = None
-    security_group_ids: Optional[List[str]] = None
-    subnet_id: Optional[str] = None
+    instance_type: str = "c6g.xlarge"
+    key_name: str = "android-vms-project-europe"
+    security_group_ids: List[str] = ["sg-082c79721016868d3"]
+    subnet_id: str = "subnet-0a2abcedb92aba9e1"
     min_count: int = 1
     max_count: int = 1
 
