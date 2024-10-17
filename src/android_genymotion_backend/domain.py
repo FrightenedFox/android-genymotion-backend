@@ -262,10 +262,8 @@ class SessionModel(DynamoDBModel[Session]):
         try:
             session = self.get_item_by_id(session_id)
             if session and session.instance:
-                instance_id = session.instance.instance_id
                 instance_model = InstanceModel()
-                instance_info = instance_model.get_instance_info(instance_id)
-                session.instance = instance_info
+                session.instance = instance_model.get_instance_info(session.instance.instance_id)
                 self.table.update_item(
                     Key={
                         self.partition_key_name: self.partition_key_value,
@@ -287,14 +285,15 @@ class SessionModel(DynamoDBModel[Session]):
         try:
             sessions = self.get_all_items()
             instance_ids = [session.instance.instance_id for session in sessions if session.instance]
+            logger.info(f"Retrieved {len(sessions)} sessions, instances: {instance_ids}")
             if instance_ids:
                 instance_model = InstanceModel()
                 instances_info = instance_model.get_instances_info(instance_ids)
                 # Update each session's instance information
                 for session in sessions:
-                    instance_id = session.instance.instance_id
-                    instance_info = instances_info.get(instance_id)
-                    session.instance = instance_info
+                    if not session.instance:
+                        continue
+                    session.instance = instances_info.get(session.instance.instance_id)
                     # Update DynamoDB with the new instance information
                     self.table.update_item(
                         Key={

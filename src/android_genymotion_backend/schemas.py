@@ -31,6 +31,7 @@ class Game(BaseModel):
     name: str
     version: str
     apk_s3_path: str
+    # TODO: game orientation, min version
 
 # Schema for Video entity
 class Video(BaseModel):
