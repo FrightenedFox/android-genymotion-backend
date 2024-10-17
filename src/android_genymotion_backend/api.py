@@ -50,6 +50,18 @@ def get_session(session_id: str) -> Session:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/sessions", response_model=List[Session])
+def get_all_sessions() -> List[Session]:
+    """
+    Retrieve all sessions, updating their instance states.
+    """
+    try:
+        sessions = session_model.get_all_sessions_with_updated_states()
+        return sessions
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/sessions/{session_id}/end")
 def end_session(session_id: str) -> dict:
     """
@@ -156,3 +168,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="localhost", port=8000)
+ż
