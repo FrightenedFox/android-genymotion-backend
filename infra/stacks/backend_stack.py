@@ -31,7 +31,7 @@ class BackendStack(Stack):
                 bundling=BundlingOptions(
                     image=_lambda.Runtime.PYTHON_3_11.bundling_image,
                     command=["bash", "-c", "pip install -r requirements.txt -t /asset-output && cp -r . /asset-output"],
-                    platform="linux/arm64",
+                    platform="linux/x86_64",
                 ),
             ),
             environment={
@@ -40,7 +40,7 @@ class BackendStack(Stack):
             },
             timeout=Duration.seconds(30),
             memory_size=512,
-            architecture=_lambda.Architecture.ARM_64,
+            architecture=_lambda.Architecture.X86_64,
         )
 
         # Add necessary IAM permissions
