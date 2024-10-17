@@ -42,7 +42,7 @@ def get_session(session_id: str) -> Session:
     """
     try:
         # Update the instance state before returning the session
-        session_model.update_instance_state(session_id)
+        session_model.update_instance_info(session_id)
         item = session_model.get_item_by_id(session_id)
         if not item:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -57,7 +57,7 @@ def get_all_sessions() -> List[Session]:
     Retrieve all sessions, updating their instance states.
     """
     try:
-        sessions = session_model.get_all_sessions_with_updated_states()
+        sessions = session_model.get_all_sessions_with_updated_info()
         return sessions
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

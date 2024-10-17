@@ -133,51 +133,70 @@ class InstanceModel:
             logger.error(f"Error terminating EC2 instance {instance_id}: {e}")
             raise
 
-    def get_instance_state(self, instance_id: str) -> Optional[str]:
+    def get_instance_info(self, instance_id: str) -> Optional[InstanceInfo]:
         try:
             response = self.ec2.describe_instances(InstanceIds=[instance_id])
             reservations = response["Reservations"]
             if not reservations:
-                logger.warning(f"Instance {instance_id} not found; assuming 'terminated'")
+                logger.warning(f"Instance {instance_id} not found; setting instance info to None")
                 return None
+
             instance = reservations[0]["Instances"][0]
             state = instance["State"]["Name"]
-            logger.info(f"Instance {instance_id} is in state {state}")
-            return state
+            ip_address = instance.get("PublicIpAddress")
+            aws_address = instance.get("PublicDnsName")
+
+            return InstanceInfo(
+                instance_id=instance_id,
+                instance_type=instance["InstanceType"],
+                instance_state=state,
+                instance_ip=ip_address,
+                instance_aws_address=aws_address,
+            )
         except (BotoCoreError, ClientError) as e:
-            logger.error(f"Error getting state for EC2 instance {instance_id}: {e}")
+            logger.error(f"Error getting info for EC2 instance {instance_id}: {e}")
             return None
 
-    def get_instances_states(self, instance_ids: List[str]) -> Dict[str, Optional[str]]:
+    def get_instances_info(self, instance_ids: List[str]) -> Dict[str, Optional[InstanceInfo]]:
         """
-        Returns a mapping from instance IDs to their current state.
-        If an instance is not found, its state is set to None.
+        Returns a mapping from instance IDs to their full instance information.
+        If an instance is not found, its information is set to None.
         """
-        states = {}
+        instances_info = {}
         try:
             # Split instance_ids into chunks to avoid exceeding API limits
             max_ids_per_request = 1000  # AWS limit per request
             for i in range(0, len(instance_ids), max_ids_per_request):
-                chunk = instance_ids[i : i + max_ids_per_request]
+                chunk = instance_ids[i: i + max_ids_per_request]
                 response = self.ec2.describe_instances(InstanceIds=chunk)
                 found_instance_ids = set()
                 for reservation in response["Reservations"]:
                     for instance in reservation["Instances"]:
                         instance_id = instance["InstanceId"]
                         state = instance["State"]["Name"]
-                        states[instance_id] = state
+                        ip_address = instance.get("PublicIpAddress")
+                        aws_address = instance.get("PublicDnsName")
+
+                        instances_info[instance_id] = InstanceInfo(
+                            instance_id=instance_id,
+                            instance_type=instance["InstanceType"],
+                            instance_state=state,
+                            instance_ip=ip_address,
+                            instance_aws_address=aws_address,
+                        )
                         found_instance_ids.add(instance_id)
-                # For instance IDs not found in response, set their state to None
+                # For instance IDs not found in response, set their information to None
                 missing_instance_ids = set(chunk) - found_instance_ids
                 for missing_id in missing_instance_ids:
-                    logger.warning(f"Instance {missing_id} not found; setting state to None")
-                    states[missing_id] = None
+                    logger.warning(f"Instance {missing_id} not found; setting info to None")
+                    instances_info[missing_id] = None
         except (BotoCoreError, ClientError) as e:
-            logger.error(f"Error getting states for instances: {e}")
-            # Set states for all IDs to None in case of error
+            logger.error(f"Error getting info for instances: {e}")
+            # Set info for all IDs to None in case of error
             for instance_id in instance_ids:
-                states[instance_id] = None
-        return states
+                instances_info[instance_id] = None
+        return instances_info
+
 
 
 # Session domain class
@@ -186,6 +205,16 @@ class SessionModel(DynamoDBModel[Session]):
 
     def _deserialize(self, data: Dict[str, Any]) -> Session:
         return Session(**data)
+
+    def _update_last_accessed(self, session_id: str) -> None:
+        self.table.update_item(
+            Key={
+                self.partition_key_name: self.partition_key_value,
+                self.sort_key_name: session_id,
+            },
+            UpdateExpression="SET last_accessed_on = :last_accessed_on",
+            ExpressionAttributeValues={":last_accessed_on": datetime.now().isoformat()},
+        )
 
     def create_session(self, user_ip: Optional[str], browser_info: Optional[str]) -> Session:
         try:
@@ -201,6 +230,7 @@ class SessionModel(DynamoDBModel[Session]):
                 start_time=datetime.now().isoformat(),
             )
             self.create_item(session)
+            self._update_last_accessed(session_id)
             logger.info(f"Session {session_id} created with instance {instance_info.instance_id}")
             return session
         except Exception as e:
@@ -222,18 +252,20 @@ class SessionModel(DynamoDBModel[Session]):
                 UpdateExpression="SET end_time = :end_time",
                 ExpressionAttributeValues={":end_time": datetime.now().isoformat()},
             )
+            self._update_last_accessed(session_id)
             logger.info(f"Session {session_id} ended and instance terminated")
         except Exception as e:
             logger.error(f"Error ending session {session_id}: {e}")
             raise
 
-    def update_instance_state(self, session_id: str) -> None:
+    def update_instance_info(self, session_id: str) -> None:
         try:
             session = self.get_item_by_id(session_id)
             if session and session.instance:
                 instance_id = session.instance.instance_id
                 instance_model = InstanceModel()
-                session.instance.instance_state = instance_model.get_instance_state(instance_id)
+                instance_info = instance_model.get_instance_info(instance_id)
+                session.instance = instance_info
                 self.table.update_item(
                     Key={
                         self.partition_key_name: self.partition_key_value,
@@ -242,36 +274,37 @@ class SessionModel(DynamoDBModel[Session]):
                     UpdateExpression="SET instance = :instance",
                     ExpressionAttributeValues={":instance": session.instance.model_dump()},
                 )
-                logger.info(f"Updated instance state for session {session_id} to {session.instance.instance_state}")
+                self._update_last_accessed(session_id)
+                logger.info(f"Updated instance info for session {session_id}")
         except Exception as e:
-            logger.error(f"Error updating instance state for session {session_id}: {e}")
+            logger.error(f"Error updating instance info for session {session_id}: {e}")
             raise
 
-    def get_all_sessions_with_updated_states(self) -> List[Session]:
+    def get_all_sessions_with_updated_info(self) -> List[Session]:
         """
-        Retrieves all sessions and updates their instance states.
+        Retrieves all sessions and updates their instance information.
         """
         try:
             sessions = self.get_all_items()
             instance_ids = [session.instance.instance_id for session in sessions if session.instance]
             if instance_ids:
                 instance_model = InstanceModel()
-                instance_states = instance_model.get_instances_states(instance_ids)
-                # Now update each session's instance_state
+                instances_info = instance_model.get_instances_info(instance_ids)
+                # Update each session's instance information
                 for session in sessions:
                     instance_id = session.instance.instance_id
-                    state = instance_states.get(instance_id)
-                    session.instance.instance_state = state
-                    # Update DynamoDB with new instance_state
+                    instance_info = instances_info.get(instance_id)
+                    session.instance = instance_info
+                    # Update DynamoDB with the new instance information
                     self.table.update_item(
                         Key={
                             self.partition_key_name: self.partition_key_value,
                             self.sort_key_name: session.SK,
                         },
                         UpdateExpression="SET instance = :instance",
-                        ExpressionAttributeValues={":instance": session.instance.model_dump()},
+                        ExpressionAttributeValues={":instance": session.instance.model_dump() if session.instance else None},
                     )
-                    logger.info(f"Session {session.SK} updated with instance state {state}")
+                    logger.info(f"Session {session.SK} updated with instance information")
             return sessions
         except Exception as e:
             logger.error(f"Error retrieving and updating sessions: {e}")

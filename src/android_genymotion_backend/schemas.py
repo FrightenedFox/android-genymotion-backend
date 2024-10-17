@@ -8,18 +8,21 @@ from datetime import datetime
 class InstanceInfo(BaseModel):
     instance_id: str
     instance_type: str
-    instance_state: str | None  # e.g., "initializing", "pending", "running"
-    # Add other fields as needed
+    instance_state: Optional[str]
+    instance_ip: Optional[str] = None
+    instance_aws_address: Optional[str] = None
 
 # Schema for Session entity
 class Session(BaseModel):
     PK: str = "SESSION"  # Partition key
     SK: str  # Sort key (KSUID)
-    instance: InstanceInfo  # Include the instance info
+    instance: Optional[InstanceInfo]
     user_ip: Optional[str] = None
     browser_info: Optional[str] = None
-    start_time: str  # Store datetime as ISO-formatted string
+    start_time: str
     end_time: Optional[str] = None
+    last_accessed_on: Optional[str] = None
+
 
 # Schema for Game entity
 class Game(BaseModel):
