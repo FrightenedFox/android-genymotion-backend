@@ -11,7 +11,7 @@ from boto3.dynamodb.conditions import Key
 from datetime import datetime
 from typing import List, Optional, TypeVar, Generic, Dict, Any
 
-from android_genymotion_backend.utils import custom_requests
+from utils import custom_requests
 from schemas import Session, Game, Video, InstanceInfo
 from fastapi.encoders import jsonable_encoder
 
