@@ -41,7 +41,7 @@ class BackendStack(Stack):
             environment={
                 "STAGE": stage_name,
                 "AWS_ACCOUNT_ID": aws_account_id,
-                "HOSTED_ZONE_ID": "YOUR_HOSTED_ZONE_ID",  # Replace with your hosted zone ID
+                "HOSTED_ZONE_ID": "Z02955531S24W8X23E32A",
                 "TASK_QUEUE_URL": task_queue.queue_url,
             },
             timeout=Duration.seconds(30),
@@ -80,7 +80,7 @@ class BackendStack(Stack):
             environment={
                 "STAGE": stage_name,
                 "AWS_ACCOUNT_ID": aws_account_id,
-                "HOSTED_ZONE_ID": "YOUR_HOSTED_ZONE_ID",  # Replace with your hosted zone ID
+                "HOSTED_ZONE_ID": "Z02955531S24W8X23E32A",
             },
             timeout=Duration.seconds(900),
             memory_size=512,
