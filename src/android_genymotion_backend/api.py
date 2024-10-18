@@ -35,6 +35,7 @@ def create_session(request: CreateSessionRequest, background_tasks: BackgroundTa
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/sessions/{session_id}", response_model=Session)
 def get_session(session_id: str) -> Session:
     """
@@ -71,6 +72,18 @@ def end_session(session_id: str) -> dict:
     try:
         session_model.end_session(session_id)
         return {"message": f"Session {session_id} ended."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sessions/end-all-active")
+def end_all_active_sessions(background_tasks: BackgroundTasks) -> dict:
+    """
+    End all sessions that have an active instance running.
+    """
+    try:
+        session_model.end_all_active_sessions(background_tasks)
+        return {"message": "All active sessions have been queued for termination."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

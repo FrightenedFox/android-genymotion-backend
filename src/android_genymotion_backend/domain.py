@@ -343,6 +343,9 @@ class SessionModel(DynamoDBModel[Session]):
                 instance_model.terminate_instance(instance_id)
                 # Delete DNS record
                 self._delete_dns_record(session_id, session.instance.instance_ip)
+                session.instance.ssl_configured = False
+                session.instance.secure_address = None
+                self._update_instance_in_session(session_id, session.instance)
             self.table.update_item(
                 Key={
                     self.partition_key_name: self.partition_key_value,
@@ -381,6 +384,26 @@ class SessionModel(DynamoDBModel[Session]):
             logger.warning(f"DNS record for {domain_name} already deleted or does not exist")
         except Exception as e:
             logger.error(f"Error deleting DNS record: {e}")
+
+    def end_all_active_sessions(self, background_tasks: BackgroundTasks) -> None:
+        """
+        Ends all sessions that have an active instance.
+        """
+        try:
+            sessions = self.get_all_items()
+            active_sessions = [session for session in sessions if
+                               session.instance and session.instance.instance_state == "running"]
+
+            logger.info(f"Found {len(active_sessions)} active sessions to terminate.")
+
+            for session in active_sessions:
+                # Add each session termination to background tasks
+                background_tasks.add_task(self.end_session, session.SK)
+
+            logger.info("All active sessions have been queued for termination.")
+        except Exception as e:
+            logger.error(f"Error ending all active sessions: {e}")
+            raise
 
     def update_instance_info(self, session_id: str) -> None:
         try:
