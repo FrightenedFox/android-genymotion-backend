@@ -295,17 +295,15 @@ class SessionModel(DynamoDBModel[Session]):
                 HostedZoneId=os.environ["HOSTED_ZONE_ID"],
                 ChangeBatch={
                     "Comment": f"Add record for {domain_name}",
-                    "Changes": [
-                        {
-                            "Action": "UPSERT",
-                            "ResourceRecordSet": {
-                                "Name": domain_name,
-                                "Type": "A",
-                                "TTL": 300,
-                                "ResourceRecords": [{"Value": instance_ip}],
-                            },
-                        }
-                    ],
+                    "Changes": [{
+                        "Action": "UPSERT",
+                        "ResourceRecordSet": {
+                            "Name": domain_name,
+                            "Type": "A",
+                            "TTL": 300,
+                            "ResourceRecords": [{"Value": instance_ip}],
+                        },
+                    }],
                 },
             )
             logger.info(f"DNS record created for {domain_name} pointing to {instance_ip}")
@@ -378,17 +376,15 @@ class SessionModel(DynamoDBModel[Session]):
                 HostedZoneId=os.environ["HOSTED_ZONE_ID"],
                 ChangeBatch={
                     "Comment": f"Delete record for {domain_name}",
-                    "Changes": [
-                        {
-                            "Action": "DELETE",
-                            "ResourceRecordSet": {
-                                "Name": domain_name,
-                                "Type": "A",
-                                "TTL": 300,
-                                "ResourceRecords": [{"Value": instance_ip}],
-                            },
-                        }
-                    ],
+                    "Changes": [{
+                        "Action": "DELETE",
+                        "ResourceRecordSet": {
+                            "Name": domain_name,
+                            "Type": "A",
+                            "TTL": 300,
+                            "ResourceRecords": [{"Value": instance_ip}],
+                        },
+                    }],
                 },
             )
             logger.info(f"DNS record deleted for {domain_name}")
@@ -424,8 +420,9 @@ class SessionModel(DynamoDBModel[Session]):
             if session and session.instance:
                 instance_model = InstanceModel()
                 aws_instance_info = instance_model.get_instance_info(session.instance.instance_id)
-                aws_instance_info.ssl_configured = session.instance.ssl_configured
-                aws_instance_info.secure_address = session.instance.secure_address
+                if aws_instance_info:
+                    aws_instance_info.ssl_configured = session.instance.ssl_configured
+                    aws_instance_info.secure_address = session.instance.secure_address
                 session.instance = aws_instance_info
                 self.table.update_item(
                     Key={
@@ -456,8 +453,9 @@ class SessionModel(DynamoDBModel[Session]):
                     if not session.instance:
                         continue
                     aws_instance_info = aws_instances_info.get(session.instance.instance_id)
-                    aws_instance_info.ssl_configured = session.instance.ssl_configured
-                    aws_instance_info.secure_address = session.instance.secure_address
+                    if aws_instance_info:
+                        aws_instance_info.ssl_configured = session.instance.ssl_configured
+                        aws_instance_info.secure_address = session.instance.secure_address
                     session.instance = aws_instance_info
                     # Update DynamoDB with the new instance information
                     self.table.update_item(
