@@ -23,6 +23,21 @@ video_model = VideoModel()
 ami_model = AMIModel()
 
 
+@app.get("/sessions", response_model=List[Session])
+def get_all_sessions(only_active: bool = False) -> List[Session]:
+    """
+    Retrieve all sessions, updating their instance states.
+
+    Args:
+        only_active (bool): If True, only return active sessions where the instance is running.
+    """
+    try:
+        sessions = session_model.get_all_sessions_with_updated_info(only_active=only_active)
+        return sessions
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Session endpoints
 @app.post("/sessions", response_model=Session)
 def create_session(request: CreateSessionRequest) -> Session:
@@ -47,24 +62,13 @@ def get_session(session_id: str) -> Session:
     """
     try:
         # Update the instance state before returning the session
-        session_model.update_instance_info(session_id)
+        session_model.update_instance_in_session(session_id)
         item = session_model.get_item_by_id(session_id)
-        session_model.update_last_accessed(session_id)
-        if not item:
+        if item:
+            session_model.update_last_accessed(session_id)
+            return item
+        else:
             raise HTTPException(status_code=404, detail="Session not found")
-        return item
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/sessions", response_model=List[Session])
-def get_all_sessions() -> List[Session]:
-    """
-    Retrieve all sessions, updating their instance states.
-    """
-    try:
-        sessions = session_model.get_all_sessions_with_updated_info()
-        return sessions
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

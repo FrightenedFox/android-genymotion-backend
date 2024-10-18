@@ -247,6 +247,13 @@ class SessionModel(DynamoDBModel[Session]):
         return Session(**data)
 
     def update_last_accessed(self, session_id: str) -> None:
+        # Check if the session exists
+        session = self.get_item_by_id(session_id)
+        if not session:
+            logger.warning(f"Session {session_id} not found. Cannot update last_accessed_on.")
+            return
+
+        # Proceed with updating the last accessed time
         self.table.update_item(
             Key={
                 self.partition_key_name: self.partition_key_value,
@@ -255,6 +262,7 @@ class SessionModel(DynamoDBModel[Session]):
             UpdateExpression="SET last_accessed_on = :last_accessed_on",
             ExpressionAttributeValues={":last_accessed_on": datetime.now().isoformat()},
         )
+        logger.info(f"Updated last_accessed_on for session {session_id}")
 
     def create_session(self, ami_id: str, user_ip: Optional[str], browser_info: Optional[str]) -> Session:
         try:
@@ -347,22 +355,11 @@ class SessionModel(DynamoDBModel[Session]):
                 # Update ssl_configured to True
                 instance_info.ssl_configured = True
                 instance_info.secure_address = self.domain_name(session_id)
-                self._update_instance_in_session(session_id, instance_info)
+                self.update_instance_in_session(session_id, instance_info)
             else:
                 logger.error(f"Failed to configure certificate: {response.status_code}, {response.text}")
         except Exception as e:
             logger.error(f"Error configuring instance certificate: {e}")
-
-    def _update_instance_in_session(self, session_id: str, instance_info: InstanceInfo) -> None:
-        self.table.update_item(
-            Key={
-                self.partition_key_name: self.partition_key_value,
-                self.sort_key_name: session_id,
-            },
-            UpdateExpression="SET instance = :instance",
-            ExpressionAttributeValues={":instance": instance_info.model_dump()},
-        )
-        logger.info(f"Updated instance info in session {session_id}")
 
     def end_session(self, session_id: str) -> None:
         try:
@@ -376,7 +373,7 @@ class SessionModel(DynamoDBModel[Session]):
                 self._delete_dns_record(session_id, session.instance.instance_ip)
                 session.instance.ssl_configured = False
                 session.instance.secure_address = None
-                self._update_instance_in_session(session_id, session.instance)
+                self.update_instance_in_session(session_id, session.instance)
             self.table.update_item(
                 Key={
                     self.partition_key_name: self.partition_key_value,
@@ -437,32 +434,43 @@ class SessionModel(DynamoDBModel[Session]):
             logger.error(f"Error ending all active sessions: {e}")
             raise
 
-    def update_instance_info(self, session_id: str) -> None:
+    def update_instance_in_session(self, session_id: str, instance_info: Optional[InstanceInfo] = None) -> None:
         try:
             session = self.get_item_by_id(session_id)
-            if session and session.instance:
+            if not session or not session.instance:
+                logger.warning(f"Session {session_id} not found or has no associated instance.")
+                return
+
+            # If instance_info is not provided, fetch it from AWS
+            if not instance_info:
                 instance_model = InstanceModel()
-                aws_instance_info = instance_model.get_instance_info(session.instance.instance_id)
-                if aws_instance_info:
-                    aws_instance_info.ssl_configured = session.instance.ssl_configured
-                    aws_instance_info.secure_address = session.instance.secure_address
-                session.instance = aws_instance_info
-                self.table.update_item(
-                    Key={
-                        self.partition_key_name: self.partition_key_value,
-                        self.sort_key_name: session_id,
-                    },
-                    UpdateExpression="SET instance = :instance",
-                    ExpressionAttributeValues={":instance": session.instance.model_dump()},
-                )
-                logger.info(f"Updated instance info for session {session_id}")
+                instance_info = instance_model.get_instance_info(session.instance.instance_id)
+                if not instance_info:
+                    logger.warning(f"Could not retrieve AWS instance info for session {session_id}")
+                    return
+                instance_info.ssl_configured = session.instance.ssl_configured
+                instance_info.secure_address = session.instance.secure_address
+
+            # Update the session's instance information
+            session.instance = instance_info
+            self.table.update_item(
+                Key={
+                    self.partition_key_name: self.partition_key_value,
+                    self.sort_key_name: session_id,
+                },
+                UpdateExpression="SET instance = :instance",
+                ExpressionAttributeValues={":instance": session.instance.model_dump()},
+            )
+            logger.info(f"Updated instance info for session {session_id}")
+
         except Exception as e:
             logger.error(f"Error updating instance info for session {session_id}: {e}")
             raise
 
-    def get_all_sessions_with_updated_info(self) -> List[Session]:
+    def get_all_sessions_with_updated_info(self, only_active: bool = False) -> List[Session]:
         """
         Retrieves all sessions and updates their instance information.
+        If `only_active` is True, returns only sessions with active instances.
         """
         try:
             sessions = self.get_all_items()
@@ -491,7 +499,13 @@ class SessionModel(DynamoDBModel[Session]):
                             ":instance": session.instance.model_dump() if session.instance else None
                         },
                     )
-                    logger.info(f"Session {session.SK} updated with instance information")
+            # If only_active is True, filter out non-active sessions
+            if only_active:
+                sessions = [
+                    session
+                    for session in sessions
+                    if session.instance and session.instance.instance_state in ["running", "pending"]
+                ]
             return sessions
         except Exception as e:
             logger.error(f"Error retrieving and updating sessions: {e}")
