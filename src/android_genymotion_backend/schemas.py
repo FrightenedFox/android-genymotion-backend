@@ -21,7 +21,7 @@ class Session(BaseModel):
     PK: str = "SESSION"  # Partition key
     SK: str  # Sort key (KSUID)
     instance: Optional[InstanceInfo]
-    ami_id: str
+    ami_id: str = "ami-0f608f5544f94803b"
     user_ip: Optional[str] = None
     browser_info: Optional[str] = None
     start_time: str
