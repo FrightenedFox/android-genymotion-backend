@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from typing import List
 from domain import SessionModel, GameModel, VideoModel
 from schemas import (
@@ -21,7 +21,7 @@ video_model = VideoModel()
 
 # Session endpoints
 @app.post("/sessions", response_model=Session)
-def create_session(request: CreateSessionRequest) -> Session:
+def create_session(request: CreateSessionRequest, background_tasks: BackgroundTasks) -> Session:
     """
     Create a new session.
     """
@@ -29,11 +29,11 @@ def create_session(request: CreateSessionRequest) -> Session:
         session = session_model.create_session(
             user_ip=request.user_ip,
             browser_info=request.browser_info,
+            background_tasks=background_tasks,  # Pass background tasks
         )
         return session
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get("/sessions/{session_id}", response_model=Session)
 def get_session(session_id: str) -> Session:

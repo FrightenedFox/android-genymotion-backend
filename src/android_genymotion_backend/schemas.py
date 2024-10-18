@@ -11,6 +11,8 @@ class InstanceInfo(BaseModel):
     instance_state: Optional[str]
     instance_ip: Optional[str] = None
     instance_aws_address: Optional[str] = None
+    ssl_configured: bool = False
+    secure_address: Optional[str] = None
 
 # Schema for Session entity
 class Session(BaseModel):

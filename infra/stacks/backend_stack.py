@@ -37,8 +37,9 @@ class BackendStack(Stack):
             environment={
                 "STAGE": stage_name,
                 "AWS_ACCOUNT_ID": aws_account_id,
+                "HOSTED_ZONE_ID": "Z02955531S24W8X23E32A",
             },
-            timeout=Duration.seconds(30),
+            timeout=Duration.seconds(600),
             memory_size=512,
             architecture=_lambda.Architecture.X86_64,
         )
@@ -49,6 +50,7 @@ class BackendStack(Stack):
                 actions=[
                     "dynamodb:*",
                     "ec2:*",
+                    "route53:*",
                 ],
                 resources=["*"],
             )
