@@ -1,8 +1,9 @@
 # schemas.py
 
+from typing import Optional
+
 from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
+
 
 # New Pydantic model for instance info
 class InstanceInfo(BaseModel):
@@ -13,6 +14,7 @@ class InstanceInfo(BaseModel):
     instance_aws_address: Optional[str] = None
     ssl_configured: bool = False
     secure_address: Optional[str] = None
+
 
 # Schema for Session entity
 class Session(BaseModel):
@@ -35,6 +37,7 @@ class Game(BaseModel):
     apk_s3_path: str
     # TODO: game orientation, min version
 
+
 # Schema for Video entity
 class Video(BaseModel):
     PK: str = "VIDEO"  # Partition key
@@ -46,15 +49,18 @@ class Video(BaseModel):
     size: Optional[int] = None  # Size in bytes
     timestamp: str  # Store datetime as ISO-formatted string
 
+
 # Request schemas for API endpoints
 class CreateSessionRequest(BaseModel):
     user_ip: Optional[str] = None
     browser_info: Optional[str] = None
 
+
 class CreateGameRequest(BaseModel):
     name: str
     version: str
     apk_s3_path: str
+
 
 class CreateVideoRequest(BaseModel):
     session_id: str

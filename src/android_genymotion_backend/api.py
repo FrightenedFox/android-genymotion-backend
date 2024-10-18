@@ -1,15 +1,9 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
 from typing import List
-from domain import SessionModel, GameModel, VideoModel
-from schemas import (
-    CreateSessionRequest,
-    CreateGameRequest,
-    CreateVideoRequest,
-    Session,
-    Game,
-    Video,
-)
+
+from domain import GameModel, SessionModel, VideoModel
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from mangum import Mangum
+from schemas import CreateGameRequest, CreateSessionRequest, CreateVideoRequest, Game, Session, Video
 
 app = FastAPI()
 
@@ -44,6 +38,7 @@ def get_session(session_id: str) -> Session:
         # Update the instance state before returning the session
         session_model.update_instance_info(session_id)
         item = session_model.get_item_by_id(session_id)
+        session_model.update_last_accessed(session_id)
         if not item:
             raise HTTPException(status_code=404, detail="Session not found")
         return item

@@ -35,3 +35,4 @@ repos:
           - pydantic-settings
           - types-PyYAML
           - pytest-stub
+          - types-requests

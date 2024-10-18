@@ -1,15 +1,10 @@
-from aws_cdk import (
-    Stack,
-    aws_lambda as _lambda,
-    aws_apigateway as apigw,
-    aws_iam as iam,
-    aws_logs as logs,
-    aws_sqs as sqs,
-    aws_lambda_event_sources as event_sources,
-    Duration,
-    BundlingOptions,
-    CfnOutput,
-)
+from aws_cdk import BundlingOptions, CfnOutput, Duration, Stack
+from aws_cdk import aws_apigateway as apigw
+from aws_cdk import aws_iam as iam
+from aws_cdk import aws_lambda as _lambda
+from aws_cdk import aws_lambda_event_sources as event_sources
+from aws_cdk import aws_logs as logs
+from aws_cdk import aws_sqs as sqs
 from constructs import Construct
 
 
@@ -19,7 +14,7 @@ class BackendStack(Stack):
 
         # Get account and region from the CDK context
         aws_account_id = self.account
-        aws_region = self.region
+        # aws_region = self.region
 
         # Define the SQS queue
         task_queue = sqs.Queue(

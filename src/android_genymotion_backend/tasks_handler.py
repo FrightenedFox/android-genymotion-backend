@@ -1,7 +1,7 @@
 import json
 import logging
 
-from domain import SessionModel, InstanceModel
+from domain import InstanceModel, SessionModel
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

@@ -1,21 +1,18 @@
+import json
+import logging
 import os
 import uuid
-
-import requests
-from fastapi import BackgroundTasks
-from ksuid import ksuid
+from datetime import datetime
+from typing import Any, Dict, Generic, List, Optional, TypeVar
 
 import boto3
-from botocore.exceptions import BotoCoreError, ClientError
 from boto3.dynamodb.conditions import Key
-from datetime import datetime
-from typing import List, Optional, TypeVar, Generic, Dict, Any
-
-from utils import custom_requests
-from schemas import Session, Game, Video, InstanceInfo
+from botocore.exceptions import BotoCoreError, ClientError
+from fastapi import BackgroundTasks
 from fastapi.encoders import jsonable_encoder
-
-import logging
+from ksuid import ksuid
+from schemas import Game, InstanceInfo, Session, Video
+from utils import custom_requests
 
 # Configure logging
 logger = logging.getLogger()
@@ -103,7 +100,7 @@ class DynamoDBModel(Generic[T]):
 
 
 class InstanceModel:
-    def __init__(self):
+    def __init__(self) -> None:
         self.ec2 = boto3.client("ec2")
 
     def create_instance(self) -> InstanceInfo:
@@ -227,7 +224,7 @@ class SessionModel(DynamoDBModel[Session]):
     def _deserialize(self, data: Dict[str, Any]) -> Session:
         return Session(**data)
 
-    def _update_last_accessed(self, session_id: str) -> None:
+    def update_last_accessed(self, session_id: str) -> None:
         self.table.update_item(
             Key={
                 self.partition_key_name: self.partition_key_value,
@@ -251,7 +248,7 @@ class SessionModel(DynamoDBModel[Session]):
                 start_time=datetime.now().isoformat(),
             )
             self.create_item(session)
-            self._update_last_accessed(session_id)
+            self.update_last_accessed(session_id)
             logger.info(f"Session {session_id} created with instance {instance_info.instance_id}")
 
             # Send a message to the SQS queue
@@ -262,7 +259,7 @@ class SessionModel(DynamoDBModel[Session]):
             logger.error(f"Error creating session: {e}")
             raise
 
-    def _enqueue_background_task(self, session_id: str, instance_info: InstanceInfo):
+    def _enqueue_background_task(self, session_id: str, instance_info: InstanceInfo) -> None:
         try:
             sqs = boto3.client("sqs")
             queue_url = os.environ["TASK_QUEUE_URL"]
@@ -276,7 +273,7 @@ class SessionModel(DynamoDBModel[Session]):
             logger.error(f"Error enqueuing background task: {e}")
             raise
 
-    def _setup_dns_and_certificate(self, session_id: str, instance_info: InstanceInfo):
+    def _setup_dns_and_certificate(self, session_id: str, instance_info: InstanceInfo) -> None:
         # Wait for instance to be running and get IP
         instance_model = InstanceModel()
         instance_info = instance_model.wait_for_instance_running(instance_info.instance_id)
@@ -290,31 +287,32 @@ class SessionModel(DynamoDBModel[Session]):
         else:
             logger.error(f"Instance {instance_info.instance_id} did not reach running state or has no public IP.")
 
-    def create_dns_record(self, session_id: str, instance_ip: str):
+    def create_dns_record(self, session_id: str, instance_ip: str) -> None:
         route53 = boto3.client("route53")
         domain_name = self.domain_name(session_id)
         try:
-
             route53.change_resource_record_sets(
                 HostedZoneId=os.environ["HOSTED_ZONE_ID"],
                 ChangeBatch={
                     "Comment": f"Add record for {domain_name}",
-                    "Changes": [{
-                        "Action": "UPSERT",
-                        "ResourceRecordSet": {
-                            "Name": domain_name,
-                            "Type": "A",
-                            "TTL": 300,
-                            "ResourceRecords": [{"Value": instance_ip}],
-                        },
-                    }],
+                    "Changes": [
+                        {
+                            "Action": "UPSERT",
+                            "ResourceRecordSet": {
+                                "Name": domain_name,
+                                "Type": "A",
+                                "TTL": 300,
+                                "ResourceRecords": [{"Value": instance_ip}],
+                            },
+                        }
+                    ],
                 },
             )
             logger.info(f"DNS record created for {domain_name} pointing to {instance_ip}")
         except Exception as e:
             logger.error(f"Error creating DNS record: {e}")
 
-    def configure_instance_certificate(self, session_id: str, instance_info: InstanceInfo):
+    def configure_instance_certificate(self, session_id: str, instance_info: InstanceInfo) -> None:
         try:
             # wait for 15 seconds before configuring the certificate
             url = f"https://{instance_info.instance_ip}/api/v1/configuration/certificate"
@@ -334,7 +332,7 @@ class SessionModel(DynamoDBModel[Session]):
         except Exception as e:
             logger.error(f"Error configuring instance certificate: {e}")
 
-    def _update_instance_in_session(self, session_id: str, instance_info: InstanceInfo):
+    def _update_instance_in_session(self, session_id: str, instance_info: InstanceInfo) -> None:
         self.table.update_item(
             Key={
                 self.partition_key_name: self.partition_key_value,
@@ -366,13 +364,13 @@ class SessionModel(DynamoDBModel[Session]):
                 UpdateExpression="SET end_time = :end_time",
                 ExpressionAttributeValues={":end_time": datetime.now().isoformat()},
             )
-            self._update_last_accessed(session_id)
+            self.update_last_accessed(session_id)
             logger.info(f"Session {session_id} ended, instance terminated, and DNS record deleted")
         except Exception as e:
             logger.error(f"Error ending session {session_id}: {e}")
             raise
 
-    def _delete_dns_record(self, session_id: str, instance_ip: str):
+    def _delete_dns_record(self, session_id: str, instance_ip: str) -> None:
         route53 = boto3.client("route53")
         domain_name = self.domain_name(session_id)
         try:
@@ -380,19 +378,21 @@ class SessionModel(DynamoDBModel[Session]):
                 HostedZoneId=os.environ["HOSTED_ZONE_ID"],
                 ChangeBatch={
                     "Comment": f"Delete record for {domain_name}",
-                    "Changes": [{
-                        "Action": "DELETE",
-                        "ResourceRecordSet": {
-                            "Name": domain_name,
-                            "Type": "A",
-                            "TTL": 300,
-                            "ResourceRecords": [{"Value": instance_ip}],
-                        },
-                    }],
+                    "Changes": [
+                        {
+                            "Action": "DELETE",
+                            "ResourceRecordSet": {
+                                "Name": domain_name,
+                                "Type": "A",
+                                "TTL": 300,
+                                "ResourceRecords": [{"Value": instance_ip}],
+                            },
+                        }
+                    ],
                 },
             )
             logger.info(f"DNS record deleted for {domain_name}")
-        except route53.exceptions.InvalidChangeBatch as e:
+        except route53.exceptions.InvalidChangeBatch:
             logger.warning(f"DNS record for {domain_name} already deleted or does not exist")
         except Exception as e:
             logger.error(f"Error deleting DNS record: {e}")
@@ -435,7 +435,6 @@ class SessionModel(DynamoDBModel[Session]):
                     UpdateExpression="SET instance = :instance",
                     ExpressionAttributeValues={":instance": session.instance.model_dump()},
                 )
-                self._update_last_accessed(session_id)
                 logger.info(f"Updated instance info for session {session_id}")
         except Exception as e:
             logger.error(f"Error updating instance info for session {session_id}: {e}")
