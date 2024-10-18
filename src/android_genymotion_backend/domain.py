@@ -316,7 +316,7 @@ class SessionModel(DynamoDBModel[Session]):
             url = f"https://{instance_info.instance_ip}/api/v1/configuration/certificate"
             data = [self.domain_name(session_id)]
             auth = ("genymotion", instance_info.instance_id)
-            response = custom_requests(total_retries=7, backoff_factor=1.5, connect_timeout=15, read_timeout=25).post(
+            response = custom_requests(total_retries=7, backoff_factor=1, connect_timeout=5, read_timeout=15).post(
                 url, json=data, auth=auth, verify=False  # Since the certificate might not be valid yet
             )
             if str(response.status_code).startswith("2"):

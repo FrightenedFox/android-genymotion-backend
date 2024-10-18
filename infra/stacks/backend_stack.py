@@ -34,15 +34,7 @@ class BackendStack(Stack):
                 "../src/android_genymotion_backend",
                 bundling=BundlingOptions(
                     image=_lambda.Runtime.PYTHON_3_11.bundling_image,
-                    command=[
-                        "bash",
-                        "-c",
-                        (
-                            "poetry config virtualenvs.create false && "
-                            "poetry install --no-dev --no-interaction --no-ansi -vvv --target /asset-output && "
-                            "cp -r . /asset-output"
-                        ),
-                    ],
+                    command=["bash", "-c", "pip install -r requirements.txt -t /asset-output && cp -r . /asset-output"],
                     platform="linux/x86_64",
                 ),
             ),
@@ -81,15 +73,7 @@ class BackendStack(Stack):
                 "../src/android_genymotion_backend",
                 bundling=BundlingOptions(
                     image=_lambda.Runtime.PYTHON_3_11.bundling_image,
-                    command=[
-                        "bash",
-                        "-c",
-                        (
-                            "poetry config virtualenvs.create false && "
-                            "poetry install --no-dev --no-interaction --no-ansi -vvv --target /asset-output && "
-                            "cp -r . /asset-output"
-                        ),
-                    ],
+                    command=["bash", "-c", "pip install -r requirements.txt -t /asset-output && cp -r . /asset-output"],
                     platform="linux/x86_64",
                 ),
             ),
