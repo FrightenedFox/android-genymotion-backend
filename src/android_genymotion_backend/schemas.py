@@ -1,6 +1,6 @@
 # schemas.py
 
-from typing import Optional
+from typing import Optional, Literal
 
 from pydantic import BaseModel
 
@@ -21,6 +21,7 @@ class Session(BaseModel):
     PK: str = "SESSION"  # Partition key
     SK: str  # Sort key (KSUID)
     instance: Optional[InstanceInfo]
+    ami_id: str
     user_ip: Optional[str] = None
     browser_info: Optional[str] = None
     start_time: str
@@ -28,14 +29,26 @@ class Session(BaseModel):
     last_accessed_on: Optional[str] = None
 
 
+# Schema for AMI entity
+class AMI(BaseModel):
+    PK: str = "AMI"  # Partition key
+    SK: str  # Sort key (UUID)
+    ami_id: str
+    instance_type: str
+    android_version: str
+    screen_width: int
+    screen_height: int
+
+
 # Schema for Game entity
 class Game(BaseModel):
     PK: str = "GAME"  # Partition key
     SK: str  # Sort key (UUID)
     name: str
-    version: str
+    game_version: str
     apk_s3_path: str
-    # TODO: game orientation, min version
+    min_android_version: Optional[str] = None
+    screen_orientation: Literal["horizontal", "vertical"] = "vertical"
 
 
 # Schema for Video entity
@@ -52,14 +65,18 @@ class Video(BaseModel):
 
 # Request schemas for API endpoints
 class CreateSessionRequest(BaseModel):
+    ami_id: Optional[str] = None
     user_ip: Optional[str] = None
     browser_info: Optional[str] = None
 
 
 class CreateGameRequest(BaseModel):
     name: str
-    version: str
+    game_version: str
     apk_s3_path: str
+    ami_id: str
+    min_android_version: Optional[str] = None
+    screen_orientation: Literal["horizontal", "vertical"] = "vertical"
 
 
 class CreateVideoRequest(BaseModel):
@@ -68,3 +85,11 @@ class CreateVideoRequest(BaseModel):
     s3_path: str
     duration: Optional[int] = None
     size: Optional[int] = None
+
+
+class CreateAMIRequest(BaseModel):
+    ami_id: str
+    instance_type: str
+    android_version: str
+    screen_width: int
+    screen_height: int

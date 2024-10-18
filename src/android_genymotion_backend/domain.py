@@ -3,7 +3,7 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Generic, List, Optional, TypeVar
+from typing import Any, Dict, Generic, List, Optional, TypeVar, Literal
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -11,7 +11,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import BackgroundTasks
 from fastapi.encoders import jsonable_encoder
 from ksuid import ksuid
-from schemas import Game, InstanceInfo, Session, Video
+
+from schemas import Game, InstanceInfo, Session, Video, AMI
 from utils import custom_requests
 
 # Configure logging
@@ -92,6 +93,27 @@ class DynamoDBModel(Generic[T]):
             logger.error(f"Error creating item: {e}")
             raise
 
+    def query_by_gsi(self, gsi_name: str, gsi_pk: str, gsi_sk: str) -> List[T]:
+        """
+        Generic method to query items by Global Secondary Index (GSI).
+
+        :param gsi_name: The name of the GSI.
+        :param gsi_pk: The partition key value for the GSI.
+        :param gsi_sk: The sort key value for the GSI.
+        :return: A list of deserialized items.
+        """
+        try:
+            response = self.table.query(
+                IndexName=gsi_name,
+                KeyConditionExpression=Key(self.gsi1pk_name).eq(gsi_pk) & Key(self.gsi1sk_name).eq(gsi_sk),
+            )
+            items = response.get("Items", [])
+            logger.info(f"Retrieved {len(items)} items for {gsi_name} with PK: {gsi_pk} and SK: {gsi_sk}")
+            return [self._deserialize(item) for item in items]
+        except Exception as e:
+            logger.error(f"Error querying {gsi_name} with PK: {gsi_pk} and SK: {gsi_sk}: {e}")
+            raise
+
     def _serialize(self, item: T) -> Dict[str, Any]:
         return jsonable_encoder(item)
 
@@ -103,7 +125,7 @@ class InstanceModel:
     def __init__(self) -> None:
         self.ec2 = boto3.client("ec2")
 
-    def create_instance(self) -> InstanceInfo:
+    def create_instance(self, ami_id: str) -> InstanceInfo:
         try:
             response = self.ec2.run_instances(
                 ImageId="ami-0f608f5544f94803b",
@@ -234,15 +256,16 @@ class SessionModel(DynamoDBModel[Session]):
             ExpressionAttributeValues={":last_accessed_on": datetime.now().isoformat()},
         )
 
-    def create_session(self, user_ip: Optional[str], browser_info: Optional[str]) -> Session:
+    def create_session(self, ami_id: str, user_ip: Optional[str], browser_info: Optional[str]) -> Session:
         try:
             instance_model = InstanceModel()
-            instance_info = instance_model.create_instance()
+            instance_info = instance_model.create_instance(ami_id)
             session_id = ksuid().__str__()
             session = Session(
                 PK=self.partition_key_value,
                 SK=session_id,
                 instance=instance_info,
+                ami_id=ami_id,
                 user_ip=user_ip,
                 browser_info=browser_info,
                 start_time=datetime.now().isoformat(),
@@ -475,29 +498,89 @@ class SessionModel(DynamoDBModel[Session]):
             raise
 
 
+class AMIModel(DynamoDBModel[AMI]):
+    partition_key_value: str = "AMI"
+
+    def _deserialize(self, data: Dict[str, Any]) -> AMI:
+        return AMI(**data)
+
+    def create_ami(
+        self, ami_id: str, instance_type: str, android_version: str, screen_width: int, screen_height: int
+    ) -> AMI:
+        try:
+            ami_uuid = str(uuid.uuid4())
+            ami = AMI(
+                PK=self.partition_key_value,
+                SK=ami_uuid,
+                ami_id=ami_id,
+                instance_type=instance_type,
+                android_version=android_version,
+                screen_width=screen_width,
+                screen_height=screen_height,
+            )
+            self.create_item(ami)
+            logger.info(f"AMI {ami_uuid} created: {ami_id} with instance type {instance_type}")
+            return ami
+        except Exception as e:
+            logger.error(f"Error creating AMI: {e}")
+            raise
+
+    def get_ami_by_id(self, ami_id: str) -> Optional[AMI]:
+        try:
+            return self.get_item_by_id(ami_id)
+        except Exception as e:
+            logger.error(f"Error retrieving AMI with ID {ami_id}: {e}")
+            raise
+
+    def list_all_amis(self) -> List[AMI]:
+        try:
+            return self.get_all_items()
+        except Exception as e:
+            logger.error("Error retrieving all AMIs")
+            raise
+
+
 # Game domain class
 class GameModel(DynamoDBModel[Game]):
     partition_key_value: str = "GAME"
+    gsi1pk_value: str = "AMI"
 
     def _deserialize(self, data: Dict[str, Any]) -> Game:
         return Game(**data)
 
-    def create_game(self, name: str, version: str, apk_s3_path: str) -> Game:
+    def create_game(
+        self,
+        name: str,
+        version: str,
+        apk_s3_path: str,
+        ami_id: str,
+        min_android_version: Optional[str] = None,
+        screen_orientation: Literal["horizontal", "vertical"] = "vertical",
+    ) -> Game:
         try:
             game_id = str(uuid.uuid4())
             game = Game(
                 PK=self.partition_key_value,
                 SK=game_id,
                 name=name,
-                version=version,
+                game_version=version,
                 apk_s3_path=apk_s3_path,
+                min_android_version=min_android_version,
+                screen_orientation=screen_orientation,
             )
-            self.create_item(game)
+            extra_attributes = {
+                self.gsi1pk_name: self.gsi1pk_value,
+                self.gsi1sk_name: ami_id,
+            }
+            self.create_item(game, extra_attributes=extra_attributes)
             logger.info(f"Game {game_id} created: {name} v{version}")
             return game
         except Exception as e:
             logger.error(f"Error creating game: {e}")
             raise
+
+    def get_games_by_ami_id(self, ami_id: str) -> List[Game]:
+        return self.query_by_gsi(self.gsi1_name, self.gsi1pk_value, ami_id)
 
 
 # Video domain class
@@ -543,28 +626,7 @@ class VideoModel(DynamoDBModel[Video]):
             raise
 
     def get_videos_by_session_id(self, session_id: str) -> List[Video]:
-        try:
-            response = self.table.query(
-                IndexName=self.gsi1_name,
-                KeyConditionExpression=Key(self.gsi1pk_name).eq(self.gsi1pk_value)
-                & Key(self.gsi1sk_name).eq(session_id),
-            )
-            items = response.get("Items", [])
-            logger.info(f"Retrieved {len(items)} videos for session {session_id}")
-            return [self._deserialize(item) for item in items]
-        except Exception as e:
-            logger.error(f"Error retrieving videos for session {session_id}: {e}")
-            raise
+        return self.query_by_gsi(self.gsi1_name, self.gsi1pk_value, session_id)
 
     def get_videos_by_game_id(self, game_id: str) -> List[Video]:
-        try:
-            response = self.table.query(
-                IndexName=self.gsi2_name,
-                KeyConditionExpression=Key(self.gsi2pk_name).eq(self.gsi2pk_value) & Key(self.gsi2sk_name).eq(game_id),
-            )
-            items = response.get("Items", [])
-            logger.info(f"Retrieved {len(items)} videos for game {game_id}")
-            return [self._deserialize(item) for item in items]
-        except Exception as e:
-            logger.error(f"Error retrieving videos for game {game_id}: {e}")
-            raise
+        return self.query_by_gsi(self.gsi2_name, self.gsi2pk_value, game_id)

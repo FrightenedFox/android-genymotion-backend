@@ -1,9 +1,18 @@
 from typing import List
 
-from domain import GameModel, SessionModel, VideoModel
+from domain import GameModel, SessionModel, VideoModel, AMIModel
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from mangum import Mangum
-from schemas import CreateGameRequest, CreateSessionRequest, CreateVideoRequest, Game, Session, Video
+from schemas import (
+    CreateGameRequest,
+    CreateSessionRequest,
+    CreateVideoRequest,
+    Game,
+    Session,
+    Video,
+    AMI,
+    CreateAMIRequest,
+)
 
 app = FastAPI()
 
@@ -11,6 +20,7 @@ app = FastAPI()
 session_model = SessionModel()
 game_model = GameModel()
 video_model = VideoModel()
+ami_model = AMIModel()
 
 
 # Session endpoints
@@ -21,6 +31,7 @@ def create_session(request: CreateSessionRequest) -> Session:
     """
     try:
         session = session_model.create_session(
+            ami_id="ami-0f608f5544f94803b",
             user_ip=request.user_ip,
             browser_info=request.browser_info,
         )
@@ -82,6 +93,51 @@ def end_all_active_sessions(background_tasks: BackgroundTasks) -> dict:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# AMI endpoints
+@app.post("/amis", response_model=AMI)
+def create_ami(request: CreateAMIRequest) -> AMI:
+    """
+    Create a new AMI entry.
+    """
+    try:
+        ami = ami_model.create_ami(
+            ami_id=request.ami_id,
+            instance_type=request.instance_type,
+            android_version=request.android_version,
+            screen_width=request.screen_width,
+            screen_height=request.screen_height,
+        )
+        return ami
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/amis", response_model=List[AMI])
+def get_all_amis() -> List[AMI]:
+    """
+    Retrieve all AMIs.
+    """
+    try:
+        amis = ami_model.list_all_amis()
+        return amis
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/amis/{ami_id}", response_model=AMI)
+def get_ami(ami_id: str) -> AMI:
+    """
+    Retrieve an AMI by its ID.
+    """
+    try:
+        ami = ami_model.get_ami_by_id(ami_id)
+        if not ami:
+            raise HTTPException(status_code=404, detail="AMI not found")
+        return ami
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Game endpoints
 @app.get("/games", response_model=List[Game])
 def get_all_games() -> List[Game]:
@@ -110,10 +166,25 @@ def create_game(request: CreateGameRequest) -> Game:
     """
     game = game_model.create_game(
         name=request.name,
-        version=request.version,
+        version=request.game_version,
         apk_s3_path=request.apk_s3_path,
+        ami_id=request.ami_id,
+        min_android_version=request.min_android_version,
+        screen_orientation=request.screen_orientation,
     )
     return game
+
+
+@app.get("/games/ami/{ami_id}", response_model=List[Game])
+def get_games_by_ami_id(ami_id: str) -> List[Game]:
+    """
+    Retrieve all games associated with a specific AMI ID.
+    """
+    try:
+        games = game_model.get_games_by_ami_id(ami_id)
+        return games
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Video endpoints
