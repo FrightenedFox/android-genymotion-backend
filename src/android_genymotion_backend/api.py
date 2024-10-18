@@ -21,7 +21,7 @@ video_model = VideoModel()
 
 # Session endpoints
 @app.post("/sessions", response_model=Session)
-def create_session(request: CreateSessionRequest, background_tasks: BackgroundTasks) -> Session:
+def create_session(request: CreateSessionRequest) -> Session:
     """
     Create a new session.
     """
@@ -29,7 +29,6 @@ def create_session(request: CreateSessionRequest, background_tasks: BackgroundTa
         session = session_model.create_session(
             user_ip=request.user_ip,
             browser_info=request.browser_info,
-            background_tasks=background_tasks,  # Pass background tasks
         )
         return session
     except Exception as e:

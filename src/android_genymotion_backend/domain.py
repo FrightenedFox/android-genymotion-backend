@@ -237,9 +237,7 @@ class SessionModel(DynamoDBModel[Session]):
             ExpressionAttributeValues={":last_accessed_on": datetime.now().isoformat()},
         )
 
-    def create_session(
-        self, user_ip: Optional[str], browser_info: Optional[str], background_tasks: BackgroundTasks
-    ) -> Session:
+    def create_session(self, user_ip: Optional[str], browser_info: Optional[str]) -> Session:
         try:
             instance_model = InstanceModel()
             instance_info = instance_model.create_instance()
@@ -256,12 +254,26 @@ class SessionModel(DynamoDBModel[Session]):
             self._update_last_accessed(session_id)
             logger.info(f"Session {session_id} created with instance {instance_info.instance_id}")
 
-            # Add background task
-            background_tasks.add_task(self._setup_dns_and_certificate, session_id, instance_info)
+            # Send a message to the SQS queue
+            self._enqueue_background_task(session_id, instance_info)
 
             return session
         except Exception as e:
             logger.error(f"Error creating session: {e}")
+            raise
+
+    def _enqueue_background_task(self, session_id: str, instance_info: InstanceInfo):
+        try:
+            sqs = boto3.client("sqs")
+            queue_url = os.environ["TASK_QUEUE_URL"]
+            message_body = {
+                "session_id": session_id,
+                "instance_id": instance_info.instance_id,
+            }
+            sqs.send_message(QueueUrl=queue_url, MessageBody=json.dumps(message_body))
+            logger.info(f"Enqueued background task for session {session_id}")
+        except Exception as e:
+            logger.error(f"Error enqueuing background task: {e}")
             raise
 
     def _setup_dns_and_certificate(self, session_id: str, instance_info: InstanceInfo):
@@ -271,14 +283,14 @@ class SessionModel(DynamoDBModel[Session]):
 
         if instance_info and instance_info.instance_ip:
             # Create DNS record
-            self._create_dns_record(session_id, instance_info.instance_ip)
+            self.create_dns_record(session_id, instance_info.instance_ip)
 
             # Make API call to the instance
-            self._configure_instance_certificate(session_id, instance_info)
+            self.configure_instance_certificate(session_id, instance_info)
         else:
             logger.error(f"Instance {instance_info.instance_id} did not reach running state or has no public IP.")
 
-    def _create_dns_record(self, session_id: str, instance_ip: str):
+    def create_dns_record(self, session_id: str, instance_ip: str):
         route53 = boto3.client("route53")
         domain_name = self.domain_name(session_id)
         try:
@@ -302,7 +314,7 @@ class SessionModel(DynamoDBModel[Session]):
         except Exception as e:
             logger.error(f"Error creating DNS record: {e}")
 
-    def _configure_instance_certificate(self, session_id: str, instance_info: InstanceInfo):
+    def configure_instance_certificate(self, session_id: str, instance_info: InstanceInfo):
         try:
             # wait for 15 seconds before configuring the certificate
             url = f"https://{instance_info.instance_ip}/api/v1/configuration/certificate"
@@ -391,8 +403,9 @@ class SessionModel(DynamoDBModel[Session]):
         """
         try:
             sessions = self.get_all_items()
-            active_sessions = [session for session in sessions if
-                               session.instance and session.instance.instance_state == "running"]
+            active_sessions = [
+                session for session in sessions if session.instance and session.instance.instance_state == "running"
+            ]
 
             logger.info(f"Found {len(active_sessions)} active sessions to terminate.")
 
