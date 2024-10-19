@@ -453,7 +453,7 @@ class SessionModel(DynamoDBModel[Session]):
             List[Session]: List of inactive sessions.
         """
         try:
-            current_time = datetime.utcnow()
+            current_time = datetime.now()
             cutoff_time = current_time - timedelta(minutes=inactivity_minutes)
             cutoff_iso = cutoff_time.isoformat()
 

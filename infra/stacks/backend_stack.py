@@ -199,9 +199,12 @@ class BackendStack(Stack):
         cleanup_lambda.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
-                    "dynamodb:Scan",
-                    "dynamodb:UpdateItem",
-                    "sqs:SendMessage",
+                    "dynamodb:*",
+                    "ec2:*",
+                    "s3:*",
+                    "route53:*",
+                    "acm:*",
+                    "sqs:*",
                 ],
                 resources=["*"],
             )
