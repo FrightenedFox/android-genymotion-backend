@@ -1,3 +1,4 @@
+import random
 from typing import List
 
 from domain import GameModel, SessionModel, VideoModel, AMIModel
@@ -39,14 +40,60 @@ def get_all_sessions(only_active: bool = False) -> List[Session]:
 
 
 # Session endpoints
-@app.post("/sessions", response_model=Session)
+@app.post("/sessions/random", response_model=Session)
 def create_session(request: CreateSessionRequest) -> Session:
     """
     Create a new session.
     """
     try:
+        # Select random AMI from ami_list
+        amis_list = ami_model.get_all_items()
+        if not amis_list:
+            raise HTTPException(status_code=404, detail="No AMIs found")
+        ami_id = random.choice(amis_list).SK
+
         session = session_model.create_session(
-            ami_id="ami-0f608f5544f94803b",
+            ami_id=ami_id,
+            user_ip=request.user_ip,
+            browser_info=request.browser_info,
+        )
+        return session
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sessions/end-all-active")
+def end_all_active_sessions(background_tasks: BackgroundTasks) -> dict:
+    """
+    End all sessions that have an active instance running.
+    """
+    try:
+        session_model.end_all_active_sessions(background_tasks)
+        return {"message": "All active sessions have been queued for termination."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sessions/{year}", response_model=Session)
+def create_session(year: int, request: CreateSessionRequest) -> Session:
+    """
+    Create a new session.
+    """
+    try:
+        # Select AMI for the given year
+        amis_list = ami_model.get_all_items()
+        if not amis_list:
+            raise HTTPException(status_code=404, detail="No AMIs found")
+        ami_id = None
+        for ami in amis_list:
+            if ami.representing_year == year:
+                ami_id = ami.SK
+                break
+        if not ami_id:
+            raise HTTPException(status_code=404, detail=f"No AMI found for year {year}")
+
+        session = session_model.create_session(
+            ami_id=ami_id,
             user_ip=request.user_ip,
             browser_info=request.browser_info,
         )
@@ -81,18 +128,6 @@ def end_session(session_id: str) -> dict:
     try:
         session_model.end_session(session_id)
         return {"message": f"Session {session_id} ended."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/sessions/end-all-active")
-def end_all_active_sessions(background_tasks: BackgroundTasks) -> dict:
-    """
-    End all sessions that have an active instance running.
-    """
-    try:
-        session_model.end_all_active_sessions(background_tasks)
-        return {"message": "All active sessions have been queued for termination."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

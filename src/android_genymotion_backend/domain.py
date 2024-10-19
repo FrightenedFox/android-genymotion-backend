@@ -127,14 +127,19 @@ class InstanceModel:
 
     def create_instance(self, ami_id: str) -> InstanceInfo:
         try:
+            ami_model = AMIModel()
+            ami_info = ami_model.get_ami_by_id(ami_id)
+            if not ami_info:
+                raise ValueError(f"AMI {ami_id} not found")
             response = self.ec2.run_instances(
-                ImageId="ami-0f608f5544f94803b",
-                InstanceType="c6g.xlarge",
+                ImageId=ami_id,
+                InstanceType=ami_info.instance_type,
                 KeyName="android-vms-project-europe",
                 SecurityGroupIds=["sg-082c79721016868d3"],
                 SubnetId="subnet-0a2abcedb92aba9e1",
                 MinCount=1,
                 MaxCount=1,
+
             )
             instance = response["Instances"][0]
             instance_id = instance["InstanceId"]
@@ -146,6 +151,9 @@ class InstanceModel:
             logger.info(f"Created EC2 instance {instance_id} with state {instance_state}")
             return instance_info
         except (BotoCoreError, ClientError) as e:
+            logger.error(f"Error creating EC2 instance: {e}")
+            raise
+        except Exception as e:
             logger.error(f"Error creating EC2 instance: {e}")
             raise
 

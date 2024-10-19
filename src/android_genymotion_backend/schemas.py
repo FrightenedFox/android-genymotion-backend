@@ -67,7 +67,6 @@ class Video(BaseModel):
 
 # Request schemas for API endpoints
 class CreateSessionRequest(BaseModel):
-    ami_id: Optional[str] = None
     user_ip: Optional[str] = None
     browser_info: Optional[str] = None
 
