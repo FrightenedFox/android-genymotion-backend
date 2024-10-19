@@ -1,3 +1,6 @@
+import logging
+from typing import Optional
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -16,6 +19,7 @@ def genymotion_request(
     verify_ssl=True,
     files=None,
     stream=False,
+    logger: Optional[logging.Logger] = None,
 ):
     """
     Makes an authenticated request to the Genymotion API.
@@ -34,13 +38,15 @@ def genymotion_request(
     Returns:
         Response object.
     """
-    url = f"https://{address}{endpoint}"
+    url = f"https://{address}/api/v1{endpoint}"
     auth = HTTPBasicAuth("genymotion", instance_id)  # Password is the instance ID
 
     headers = {}
     if data is not None:
         headers["Content-Type"] = "application/json"
 
+    if logger:
+        logger.info(f"Making request to Genymotion API: {method} {url}")
     response = requests.request(
         method=method,
         url=url,

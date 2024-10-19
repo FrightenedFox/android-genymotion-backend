@@ -1,16 +1,14 @@
 import logging
 import os
-from typing import List
+from typing import List, Optional
 
 import boto3
 import requests
 from ksuid import ksuid
+from requests import Response
 
-from domain import SessionModel, GameModel, VideoModel
+from domain import SessionModel, GameModel, VideoModel, logger
 from utils import genymotion_request
-
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
 
 
 class ApplicationManager:
@@ -20,7 +18,22 @@ class ApplicationManager:
         self.video_model = VideoModel()
         self.s3_bucket_name = os.environ.get("S3_BUCKET_NAME", "android-project")
 
-    def _execute_shell_command(self, address: str, instance_id: str, command: str):
+    def _get_address_and_instance_id(self, session_id: str) -> tuple[Optional[str], Optional[str]]:
+        session = self.session_model.get_item_by_id(session_id)
+        if not session or not session.instance:
+            logger.error(f"Session {session_id} not found or instance not available.")
+            return None, None
+
+        address = session.instance.secure_address
+        instance_id = session.instance.instance_id
+
+        if not address:
+            logger.error(f"Secure address for session {session_id} not found.")
+            return None, instance_id
+
+        return address, instance_id
+
+    def _execute_shell_command(self, address: str, instance_id: str, command: str) -> Response:
         """
         Executes a shell command on the device via the Genymotion API.
 
@@ -32,10 +45,11 @@ class ApplicationManager:
         endpoint = "/android/shell"
         data = {"commands": [command], "timeout_in_seconds": 10}
 
+        logger.info(f"Executing shell command on {address}: {command}")
         response = genymotion_request(
             address=address, instance_id=instance_id, method="POST", endpoint=endpoint, data=data, verify_ssl=True
         )
-        return response.json()
+        return response
 
     def _set_screen_orientation(self, address: str, instance_id: str, orientation: str):
         """
@@ -127,8 +141,8 @@ class ApplicationManager:
         """
         command = "ls /sdcard/recordings/"
         result = self._execute_shell_command(address, instance_id, command)
-        output = result.get("results", [{}])[0].get("stdout", "")
-        filenames = output.strip().split("\n")
+        logger.info(f"Listing recording files on {address}")
+        filenames = result.text.strip().split("\n")
         file_list = [
             f"/sdcard/recordings/{filename}"
             for filename in filenames
@@ -148,7 +162,7 @@ class ApplicationManager:
         """
         # Download the file using the Genymotion API
         endpoint = "/files"
-        params = {"guest_filepath": device_path}
+        params = {"path": device_path}
 
         response = genymotion_request(
             address=address,
@@ -174,16 +188,8 @@ class ApplicationManager:
             session_id (str): The session ID.
             enabled (bool): True to enable, False to disable.
         """
-        session = self.session_model.get_item_by_id(session_id)
-        if not session or not session.instance:
-            logger.error(f"Session {session_id} not found or instance not available.")
-            return
-
-        address = session.instance.secure_address
-        instance_id = session.instance.instance_id
-
+        address, instance_id = self._get_address_and_instance_id(session_id)
         if not address:
-            logger.error(f"Secure address for session {session_id} not found.")
             return
 
         endpoint = "/configuration/kiosk"
@@ -210,34 +216,29 @@ class ApplicationManager:
             session_id (str): The session ID.
             enabled (bool): True to enable, False to disable.
         """
-        session = self.session_model.get_item_by_id(session_id)
-        if not session or not session.instance:
-            logger.error(f"Session {session_id} not found or instance not available.")
-            return
-
-        address = session.instance.secure_address
-        instance_id = session.instance.instance_id
-
+        address, instance_id = self._get_address_and_instance_id(session_id)
         if not address:
-            logger.error(f"Secure address for session {session_id} not found.")
             return
 
-        endpoint = "/network/baseband"
-        data = {"state": enabled}
+        # Set root access to 3 (always allow)
+        endpoint = "/configuration/properties/persist.sys.root_access"
+        genymotion_request(
+            address=address, instance_id=instance_id, method="POST", endpoint=endpoint, data={"value": 3}, logger=logger
+        )
 
-        try:
-            response = genymotion_request(
-                address=address,
-                instance_id=instance_id,
-                method="POST",
-                endpoint=endpoint,
-                data=data,
-                verify_ssl=True,  # SSL certificate should be valid
-            )
-            logger.info(f"Internet access {'enabled' if enabled else 'disabled'} for session {session_id}")
-        except requests.HTTPError as e:
-            logger.error(f"Error setting internet access for session {session_id}: {e}")
-            raise
+        command = f"su -c 'svc data enable'" if enabled else f"su -c 'svc data disable'"
+        self._execute_shell_command(address, instance_id, command)
+        print("Still working")
+
+        command = f"su -c 'svc wifi enable'" if enabled else f"su -c 'svc wifi disable'"
+        self._execute_shell_command(address, instance_id, command)
+        print("Still working")
+
+        # Disable root access
+        genymotion_request(
+            address=address, instance_id=instance_id, method="POST", endpoint=endpoint, data={"value": 0}, logger=logger
+        )
+        logger.info(f"Internet access {'enabled' if enabled else 'disabled'} for session {session_id}")
 
     def cleanup_session(self, session_id: str) -> None:
         """
@@ -246,13 +247,9 @@ class ApplicationManager:
         Args:
             session_id (str): The session ID.
         """
-        session = self.session_model.get_item_by_id(session_id)
-        if not session or not session.instance:
-            logger.error(f"Session {session_id} not found or instance not available.")
+        address, instance_id = self._get_address_and_instance_id(session_id)
+        if not address:
             return
-
-        address = session.instance.secure_address
-        instance_id = session.instance.instance_id
 
         try:
             # Stop screen recording (if any)
@@ -260,6 +257,9 @@ class ApplicationManager:
 
             # Close all open applications
             self._stop_all_applications(address, instance_id)
+
+            # Set screen orientation to vertical
+            self._set_screen_orientation(address, instance_id, "vertical")
 
             logger.info(f"Session {session_id} cleaned up.")
         except Exception as e:
@@ -275,22 +275,14 @@ class ApplicationManager:
             game_id (str): The game ID.
             virtual_keyboard (bool): Whether to enable the virtual keyboard.
         """
-        session = self.session_model.get_item_by_id(session_id)
         game = self.game_model.get_item_by_id(game_id)
-
-        if not session or not session.instance:
-            logger.error(f"Session {session_id} not found or instance not available.")
-            return
 
         if not game:
             logger.error(f"Game {game_id} not found.")
             return
 
-        address = session.instance.secure_address
-        instance_id = session.instance.instance_id
-
+        address, instance_id = self._get_address_and_instance_id(session_id)
         if not address:
-            logger.error(f"Secure address for session {session_id} not found.")
             return
 
         try:
@@ -303,11 +295,11 @@ class ApplicationManager:
             # Enable or disable WiFi
             self.set_internet_access(session_id, game.wifi_enabled)
 
-            # Enable kiosk mode
-            self.set_kiosk_mode(session_id, enabled=True)
-
             # Launch the game application
             self._launch_application(address, instance_id, game.android_package_name)
+
+            # Enable kiosk mode
+            self.set_kiosk_mode(session_id, enabled=True)
 
             # Generate recording_id
             recording_id = ksuid().__str__()
@@ -324,13 +316,9 @@ class ApplicationManager:
         """
         Uploads all recordings from the device to S3 and creates Video entries.
         """
-        session = self.session_model.get_item_by_id(session_id)
-        if not session or not session.instance:
-            logger.error(f"Session {session_id} not found or instance not available.")
+        address, instance_id = self._get_address_and_instance_id(session_id)
+        if not address:
             return
-
-        address = session.instance.secure_address
-        instance_id = session.instance.instance_id
 
         try:
             # List all recording files
@@ -387,17 +375,8 @@ class ApplicationManager:
         Args:
             session_id (str): The session ID.
         """
-        session = self.session_model.get_item_by_id(session_id)
-
-        if not session or not session.instance:
-            logger.error(f"Session {session_id} not found or instance not available.")
-            return
-
-        address = session.instance.secure_address
-        instance_id = session.instance.instance_id
-
+        address, instance_id = self._get_address_and_instance_id(session_id)
         if not address:
-            logger.error(f"Secure address for session {session_id} not found.")
             return
 
         try:
@@ -412,6 +391,9 @@ class ApplicationManager:
 
             # Enable internet access
             self.set_internet_access(session_id, enabled=True)
+
+            # Set screen orientation to vertical
+            self._set_screen_orientation(address, instance_id, "vertical")
 
             logger.info(f"Game stopped in session {session_id}")
         except Exception as e:

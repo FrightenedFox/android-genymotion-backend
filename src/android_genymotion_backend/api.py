@@ -168,6 +168,18 @@ def cleanup_session(session_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/sessions/{session_id}/upload-recordings")
+def upload_recordings(session_id: str):
+    """
+    Upload all recordings for the session.
+    """
+    try:
+        app_manager.upload_all_recordings_to_s3(session_id)
+        return {"message": f"Recordings uploaded for session {session_id}."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/sessions/{session_id}/games/stop")
 def stop_game(session_id: str):
     """
