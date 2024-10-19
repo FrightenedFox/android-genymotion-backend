@@ -4,6 +4,7 @@ from typing import List
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from mangum import Mangum
 
+from application_manager import ApplicationManager
 from domain import GameModel, SessionModel, VideoModel, AMIModel, VcpuLimitExceededException
 from schemas import (
     CreateGameRequest,
@@ -23,6 +24,7 @@ session_model = SessionModel()
 game_model = GameModel()
 video_model = VideoModel()
 ami_model = AMIModel()
+app_manager = ApplicationManager()
 
 
 @app.get("/sessions", response_model=List[Session])
@@ -126,6 +128,66 @@ def end_session(session_id: str) -> dict:
     try:
         session_model.end_session(session_id)
         return {"message": f"Session {session_id} ended."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sessions/{session_id}/kiosk")
+def set_kiosk(session_id: str, enabled: bool):
+    """
+    Enable or disable kiosk mode in the specified session.
+    """
+    try:
+        app_manager.set_kiosk_mode(session_id, enabled)
+        return {"message": f"Kiosk mode {'enabled' if enabled else 'disabled'} in session {session_id}."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sessions/{session_id}/internet")
+def set_internet(session_id: str, enabled: bool):
+    """
+    Enable or disable internet access in the specified session.
+    """
+    try:
+        app_manager.set_internet_access(session_id, enabled)
+        return {"message": f"Internet access {'enabled' if enabled else 'disabled'} in session {session_id}."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sessions/{session_id}/cleanup")
+def cleanup_session(session_id: str):
+    """
+    Clean up the specified session.
+    """
+    try:
+        app_manager.cleanup_session(session_id)
+        return {"message": f"Session {session_id} cleaned up."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sessions/{session_id}/games/stop")
+def stop_game(session_id: str):
+    """
+    Stop the game in the specified session.
+    """
+    try:
+        app_manager.stop_game_in_session(session_id)
+        return {"message": f"Game stopped in session {session_id}."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sessions/{session_id}/games/{game_id}/start")
+def start_game(session_id: str, game_id: str):
+    """
+    Start a game in the specified session.
+    """
+    try:
+        app_manager.start_game_in_session(session_id, game_id)
+        return {"message": f"Game {game_id} started in session {session_id}."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -254,9 +316,9 @@ def create_video(request: CreateVideoRequest) -> Video:
     Create a new video entry.
     """
     video = video_model.create_video(
+        video_id=request.video_id,
         session_id=request.session_id,
         game_id=request.game_id,
-        s3_path=request.s3_path,
         duration=request.duration,
         size=request.size,
     )

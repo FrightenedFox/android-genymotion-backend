@@ -2,6 +2,60 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+import requests
+from requests.auth import HTTPBasicAuth
+
+
+def genymotion_request(
+    address: str,
+    instance_id: str,
+    method: str,
+    endpoint: str,
+    data=None,
+    params=None,
+    verify_ssl=True,
+    files=None,
+    stream=False,
+):
+    """
+    Makes an authenticated request to the Genymotion API.
+
+    Args:
+        address (str): The secure address (domain name).
+        instance_id (str): The EC2 instance ID (used as password).
+        method (str): HTTP method ('GET', 'POST', 'PUT', 'DELETE').
+        endpoint (str): API endpoint (e.g., '/android/shell').
+        data (dict): JSON data to send in the body of the request.
+        params (dict): Query parameters.
+        verify_ssl (bool): Whether to verify SSL certificates.
+        files: Files to send in the request.
+        stream (bool): Whether to stream the response.
+
+    Returns:
+        Response object.
+    """
+    url = f"https://{address}{endpoint}"
+    auth = HTTPBasicAuth("genymotion", instance_id)  # Password is the instance ID
+
+    headers = {}
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+
+    response = requests.request(
+        method=method,
+        url=url,
+        auth=auth,
+        json=data,
+        params=params,
+        verify=verify_ssl,
+        files=files,
+        stream=stream,
+        headers=headers,
+    )
+
+    response.raise_for_status()  # Raise an exception for HTTP errors
+    return response
+
 
 def custom_requests(
     total_retries=3, backoff_factor=0.3, status_forcelist=None, allowed_methods=None, connect_timeout=5, read_timeout=15

@@ -120,10 +120,15 @@ class DynamoDBModel(Generic[T]):
     def _deserialize(self, data: Dict[str, Any]) -> T:
         raise NotImplementedError("Subclasses must implement _deserialize method.")
 
+
 class VcpuLimitExceededException(Exception):
-    def __init__(self, message="You have reached your EC2 vCPU limit. Unable to create more instances at this time. Please try again later or contact support."):
+    def __init__(
+        self,
+        message="You have reached your EC2 vCPU limit. Unable to create more instances at this time. Please try again later or contact support.",
+    ):
         self.message = message
         super().__init__(self.message)
+
 
 class InstanceModel:
     def __init__(self) -> None:
@@ -162,6 +167,7 @@ class InstanceModel:
         except Exception as e:
             logger.error(f"Error creating EC2 instance: {e}")
             raise
+
     def terminate_instance(self, instance_id: str) -> None:
         try:
             self.ec2.terminate_instances(InstanceIds=[instance_id])
@@ -630,14 +636,14 @@ class VideoModel(DynamoDBModel[Video]):
 
     def create_video(
         self,
+        video_id: str,
         session_id: str,
         game_id: str,
-        s3_path: str,
-        duration: Optional[int],
-        size: Optional[int],
+        duration: Optional[int] = None,
+        size: Optional[int] = None,
     ) -> Video:
         try:
-            video_id = ksuid().__str__()
+            s3_path = f"recordings/{video_id}.mp4"
             video = Video(
                 PK=self.partition_key_value,
                 SK=video_id,
@@ -659,6 +665,28 @@ class VideoModel(DynamoDBModel[Video]):
             return video
         except Exception as e:
             logger.error(f"Error creating video: {e}")
+            raise
+
+    def update_video_size_and_duration(self, video_id: str, size: int, duration: Optional[int] = None):
+        try:
+            update_expression = "SET size = :size"
+            expression_attribute_values = {":size": size}
+
+            if duration is not None:
+                update_expression += ", duration = :duration"
+                expression_attribute_values[":duration"] = duration
+
+            self.table.update_item(
+                Key={
+                    self.partition_key_name: self.partition_key_value,
+                    self.sort_key_name: video_id,
+                },
+                UpdateExpression=update_expression,
+                ExpressionAttributeValues=expression_attribute_values,
+            )
+            logger.info(f"Video {video_id} updated with size {size} and duration {duration}")
+        except Exception as e:
+            logger.error(f"Error updating video {video_id}: {e}")
             raise
 
     def get_videos_by_session_id(self, session_id: str) -> List[Video]:

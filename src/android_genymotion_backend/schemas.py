@@ -82,9 +82,9 @@ class CreateGameRequest(BaseModel):
 
 
 class CreateVideoRequest(BaseModel):
+    video_id: str
     session_id: str
     game_id: str
-    s3_path: str
     duration: Optional[int] = None
     size: Optional[int] = None
 
