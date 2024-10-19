@@ -103,9 +103,19 @@ class DynamoDBModel(Generic[T]):
         :return: A list of deserialized items.
         """
         try:
+            # Determine which GSI is being queried and set appropriate key names
+            if gsi_name == self.gsi1_name:
+                pk_name = self.gsi1pk_name
+                sk_name = self.gsi1sk_name
+            elif gsi_name == self.gsi2_name:
+                pk_name = self.gsi2pk_name
+                sk_name = self.gsi2sk_name
+            else:
+                raise ValueError(f"Unsupported GSI name: {gsi_name}")
+
             response = self.table.query(
                 IndexName=gsi_name,
-                KeyConditionExpression=Key(self.gsi1pk_name).eq(gsi_pk) & Key(self.gsi1sk_name).eq(gsi_sk),
+                KeyConditionExpression=Key(pk_name).eq(gsi_pk) & Key(sk_name).eq(gsi_sk),
             )
             items = response.get("Items", [])
             logger.info(f"Retrieved {len(items)} items for {gsi_name} with PK: {gsi_pk} and SK: {gsi_sk}")
@@ -642,6 +652,40 @@ class AMIModel(DynamoDBModel[AMI]):
             logger.error("Error retrieving all AMIs")
             raise
 
+    def get_recommended_ami(self) -> Optional[AMI]:
+        """
+        Returns the AMI with the lowest number of videos recorded for its assigned games.
+        """
+        try:
+            amis = self.list_all_amis()
+            if not amis:
+                logger.warning("No AMIs found.")
+                return None
+
+            game_model = GameModel()
+            video_model = VideoModel()
+
+            ami_video_counts = {}
+
+            for ami in amis:
+                games = game_model.get_games_by_ami_id(ami.SK)
+                total_videos = 0
+                for game in games:
+                    videos = video_model.get_videos_by_game_id(game.SK)
+                    total_videos += len(videos)
+                ami_video_counts[ami.SK] = total_videos
+                logger.info(f"AMI {ami.SK} has {total_videos} videos.")
+
+            # Find the AMI with the lowest video count
+            recommended_ami_id = min(ami_video_counts, key=ami_video_counts.get)
+            recommended_ami = self.get_ami_by_id(recommended_ami_id)
+            logger.info(f"Recommended AMI is {recommended_ami_id} with {ami_video_counts[recommended_ami_id]} videos.")
+
+            return recommended_ami
+        except Exception as e:
+            logger.error(f"Error getting recommended AMI: {e}")
+            raise
+
 
 # Game domain class
 class GameModel(DynamoDBModel[Game]):
@@ -686,6 +730,37 @@ class GameModel(DynamoDBModel[Game]):
 
     def get_games_by_ami_id(self, ami_id: str) -> List[Game]:
         return self.query_by_gsi(self.gsi1_name, self.gsi1pk_value, ami_id)
+
+    def get_recommended_game_for_ami(self, ami_id: str) -> Optional[Game]:
+        """
+        Returns the game assigned to the given AMI with the lowest number of videos.
+        """
+        try:
+            games = self.get_games_by_ami_id(ami_id)
+            if not games:
+                logger.warning(f"No games found for AMI {ami_id}.")
+                return None
+
+            video_model = VideoModel()
+            game_video_counts = {}
+
+            for game in games:
+                videos = video_model.get_videos_by_game_id(game.SK)
+                game_video_counts[game.SK] = len(videos)
+                logger.info(f"Game {game.SK} has {len(videos)} videos.")
+
+            # Find the game with the lowest video count
+            recommended_game_id = min(game_video_counts, key=game_video_counts.get)
+            recommended_game = self.get_item_by_id(recommended_game_id)
+            logger.info(
+                f"Recommended game for AMI {ami_id} is {recommended_game_id} with"
+                f" {game_video_counts[recommended_game_id]} videos."
+            )
+
+            return recommended_game
+        except Exception as e:
+            logger.error(f"Error getting recommended game for AMI {ami_id}: {e}")
+            raise
 
 
 # Video domain class

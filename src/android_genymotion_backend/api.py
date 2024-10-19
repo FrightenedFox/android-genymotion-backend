@@ -249,6 +249,20 @@ def get_all_amis() -> List[AMI]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/amis/recommended")
+def get_recommended_ami():
+    """
+    Retrieves the AMI with the lowest number of videos recorded for its assigned games.
+    """
+    try:
+        ami = ami_model.get_recommended_ami()
+        if not ami:
+            raise HTTPException(status_code=404, detail="No AMI found.")
+        return ami
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/amis/{ami_id}", response_model=AMI)
 def get_ami(ami_id: str) -> AMI:
     """
@@ -309,6 +323,20 @@ def get_games_by_ami_id(ami_id: str) -> List[Game]:
     try:
         games = game_model.get_games_by_ami_id(ami_id)
         return games
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/games/ami/{ami_id}/recommended")
+def get_recommended_game_for_ami(ami_id: str):
+    """
+    Retrieves the game assigned to the specified AMI with the lowest number of videos.
+    """
+    try:
+        game = game_model.get_recommended_game_for_ami(ami_id)
+        if not game:
+            raise HTTPException(status_code=404, detail="No recommended game found for the specified AMI.")
+        return game
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
