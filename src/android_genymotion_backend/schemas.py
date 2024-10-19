@@ -33,6 +33,7 @@ class Session(BaseModel):
 class AMI(BaseModel):
     PK: str = "AMI"  # Partition key
     SK: str  # Sort key (UUID)
+    representing_year: int
     instance_type: str
     disk_size: int
     android_version: str
@@ -91,6 +92,7 @@ class CreateVideoRequest(BaseModel):
 
 class CreateAMIRequest(BaseModel):
     ami_id: str
+    representing_year: int
     instance_type: str
     disk_size: int
     android_version: str

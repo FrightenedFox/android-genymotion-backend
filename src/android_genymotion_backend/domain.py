@@ -521,6 +521,7 @@ class AMIModel(DynamoDBModel[AMI]):
     def create_ami(
         self,
         ami_id: str,
+        representing_year: int,
         instance_type: str,
         disk_size: int,
         android_version: str,
@@ -531,6 +532,7 @@ class AMIModel(DynamoDBModel[AMI]):
             ami = AMI(
                 PK=self.partition_key_value,
                 SK=ami_id,
+                representing_year=representing_year,
                 instance_type=instance_type,
                 disk_size=disk_size,
                 android_version=android_version,
