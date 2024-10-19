@@ -1,9 +1,10 @@
 import random
 from typing import List
 
-from domain import GameModel, SessionModel, VideoModel, AMIModel
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from mangum import Mangum
+
+from domain import GameModel, SessionModel, VideoModel, AMIModel, VcpuLimitExceededException
 from schemas import (
     CreateGameRequest,
     CreateSessionRequest,
@@ -39,14 +40,9 @@ def get_all_sessions(only_active: bool = False) -> List[Session]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Session endpoints
 @app.post("/sessions/random", response_model=Session)
 def create_session(request: CreateSessionRequest) -> Session:
-    """
-    Create a new session.
-    """
     try:
-        # Select random AMI from ami_list
         amis_list = ami_model.get_all_items()
         if not amis_list:
             raise HTTPException(status_code=404, detail="No AMIs found")
@@ -58,6 +54,8 @@ def create_session(request: CreateSessionRequest) -> Session:
             browser_info=request.browser_info,
         )
         return session
+    except VcpuLimitExceededException as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

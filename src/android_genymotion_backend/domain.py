@@ -120,6 +120,10 @@ class DynamoDBModel(Generic[T]):
     def _deserialize(self, data: Dict[str, Any]) -> T:
         raise NotImplementedError("Subclasses must implement _deserialize method.")
 
+class VcpuLimitExceededException(Exception):
+    def __init__(self, message="You have reached your EC2 vCPU limit. Unable to create more instances at this time. Please try again later or contact support."):
+        self.message = message
+        super().__init__(self.message)
 
 class InstanceModel:
     def __init__(self) -> None:
@@ -139,7 +143,6 @@ class InstanceModel:
                 SubnetId="subnet-0a2abcedb92aba9e1",
                 MinCount=1,
                 MaxCount=1,
-
             )
             instance = response["Instances"][0]
             instance_id = instance["InstanceId"]
@@ -151,12 +154,14 @@ class InstanceModel:
             logger.info(f"Created EC2 instance {instance_id} with state {instance_state}")
             return instance_info
         except (BotoCoreError, ClientError) as e:
+            if "VcpuLimitExceeded" in str(e):
+                logger.error("VcpuLimitExceeded error while creating EC2 instance")
+                raise VcpuLimitExceededException()
             logger.error(f"Error creating EC2 instance: {e}")
             raise
         except Exception as e:
             logger.error(f"Error creating EC2 instance: {e}")
             raise
-
     def terminate_instance(self, instance_id: str) -> None:
         try:
             self.ec2.terminate_instances(InstanceIds=[instance_id])
@@ -355,7 +360,7 @@ class SessionModel(DynamoDBModel[Session]):
             url = f"https://{instance_info.instance_ip}/api/v1/configuration/certificate"
             data = [self.domain_name(session_id)]
             auth = ("genymotion", instance_info.instance_id)
-            response = custom_requests(total_retries=7, backoff_factor=1, connect_timeout=5, read_timeout=15).post(
+            response = custom_requests(total_retries=9, backoff_factor=1.5, connect_timeout=5, read_timeout=15).post(
                 url, json=data, auth=auth, verify=False  # Since the certificate might not be valid yet
             )
             if str(response.status_code).startswith("2"):

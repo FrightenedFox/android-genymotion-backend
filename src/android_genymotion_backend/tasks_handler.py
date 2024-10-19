@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 
 from domain import InstanceModel, SessionModel
 
@@ -31,6 +32,9 @@ def handler(event, context):
 
             # Create DNS record
             session_model.create_dns_record(session_id, instance_info.instance_ip)
+
+            # Sleep for 15 seconds to allow DNS record to propagate and instance to be ready
+            time.sleep(15)
 
             # Configure SSL certificate
             session_model.configure_instance_certificate(session_id, instance_info)
