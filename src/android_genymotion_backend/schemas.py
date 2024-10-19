@@ -35,6 +35,7 @@ class AMI(BaseModel):
     SK: str  # Sort key (UUID)
     ami_id: str
     instance_type: str
+    disk_size: int
     android_version: str
     screen_width: int
     screen_height: int
@@ -46,8 +47,9 @@ class Game(BaseModel):
     SK: str  # Sort key (UUID)
     name: str
     game_version: str
-    apk_s3_path: str
+    apk_s3_path: Optional[str] = None
     min_android_version: Optional[str] = None
+    wifi_enabled: bool = True
     screen_orientation: Literal["horizontal", "vertical"] = "vertical"
 
 
@@ -74,8 +76,9 @@ class CreateGameRequest(BaseModel):
     name: str
     game_version: str
     apk_s3_path: str
-    ami_id: str
+    ami_id: Optional[str] = None
     min_android_version: Optional[str] = None
+    wifi_enabled: bool = True
     screen_orientation: Literal["horizontal", "vertical"] = "vertical"
 
 
@@ -90,6 +93,7 @@ class CreateVideoRequest(BaseModel):
 class CreateAMIRequest(BaseModel):
     ami_id: str
     instance_type: str
+    disk_size: int
     android_version: str
     screen_width: int
     screen_height: int

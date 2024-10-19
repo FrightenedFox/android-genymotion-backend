@@ -519,7 +519,13 @@ class AMIModel(DynamoDBModel[AMI]):
         return AMI(**data)
 
     def create_ami(
-        self, ami_id: str, instance_type: str, android_version: str, screen_width: int, screen_height: int
+        self,
+        ami_id: str,
+        instance_type: str,
+        disk_size: int,
+        android_version: str,
+        screen_width: int,
+        screen_height: int,
     ) -> AMI:
         try:
             ami_uuid = str(uuid.uuid4())
@@ -528,6 +534,7 @@ class AMIModel(DynamoDBModel[AMI]):
                 SK=ami_uuid,
                 ami_id=ami_id,
                 instance_type=instance_type,
+                disk_size=disk_size,
                 android_version=android_version,
                 screen_width=screen_width,
                 screen_height=screen_height,
@@ -569,6 +576,7 @@ class GameModel(DynamoDBModel[Game]):
         apk_s3_path: str,
         ami_id: str,
         min_android_version: Optional[str] = None,
+        wifi_enabled: bool = True,
         screen_orientation: Literal["horizontal", "vertical"] = "vertical",
     ) -> Game:
         try:
@@ -580,6 +588,7 @@ class GameModel(DynamoDBModel[Game]):
                 game_version=version,
                 apk_s3_path=apk_s3_path,
                 min_android_version=min_android_version,
+                wifi_enabled=wifi_enabled,
                 screen_orientation=screen_orientation,
             )
             extra_attributes = {

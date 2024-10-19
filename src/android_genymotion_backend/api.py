@@ -107,6 +107,7 @@ def create_ami(request: CreateAMIRequest) -> AMI:
         ami = ami_model.create_ami(
             ami_id=request.ami_id,
             instance_type=request.instance_type,
+            disk_size=request.disk_size,
             android_version=request.android_version,
             screen_width=request.screen_width,
             screen_height=request.screen_height,
