@@ -27,6 +27,7 @@ class Session(BaseModel):
     start_time: str
     end_time: Optional[str] = None
     last_accessed_on: Optional[str] = None
+    scheduled_for_deletion: bool = False
 
 
 # Schema for AMI entity

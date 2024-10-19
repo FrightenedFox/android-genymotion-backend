@@ -55,6 +55,7 @@ class BackendStack(Stack):
                 actions=[
                     "dynamodb:*",
                     "ec2:*",
+                    "s3:*",
                     "route53:*",
                     "acm:*",
                     "sqs:*",
@@ -93,6 +94,7 @@ class BackendStack(Stack):
                 actions=[
                     "dynamodb:*",
                     "ec2:*",
+                    "s3:*",
                     "route53:*",
                     "acm:*",
                     "sqs:*",
@@ -103,6 +105,62 @@ class BackendStack(Stack):
 
         # Add SQS event source to the tasks Lambda
         tasks_lambda.add_event_source(event_sources.SqsEventSource(task_queue))
+
+        # Define the SQS queue for session termination
+        termination_queue = sqs.Queue(
+            self,
+            "SessionTerminationQueue",
+            queue_name=f"SessionTerminationQueue-{stage_name}",
+            visibility_timeout=Duration.seconds(900),  # Adjust as needed
+        )
+
+        # Define the session termination Lambda function
+        session_termination_lambda = _lambda.Function(
+            self,
+            "SessionTerminationLambda",
+            runtime=_lambda.Runtime.PYTHON_3_11,
+            handler="session_termination_handler.handler",
+            code=_lambda.Code.from_asset(
+                "../src/android_genymotion_backend",
+                bundling=BundlingOptions(
+                    image=_lambda.Runtime.PYTHON_3_11.bundling_image,
+                    command=["bash", "-c", "pip install -r requirements.txt -t /asset-output && cp -r . /asset-output"],
+                    platform="linux/x86_64",
+                ),
+            ),
+            environment={
+                "STAGE": stage_name,
+                "AWS_ACCOUNT_ID": aws_account_id,
+                "HOSTED_ZONE_ID": "Z02955531S24W8X23E32A",
+                "S3_BUCKET_NAME": "your-s3-bucket-name",  # Set your actual bucket name
+            },
+            timeout=Duration.seconds(900),
+            memory_size=512,
+            architecture=_lambda.Architecture.X86_64,
+        )
+
+        # Add necessary IAM permissions to the session termination Lambda
+        session_termination_lambda.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "dynamodb:*",
+                    "ec2:*",
+                    "s3:*",
+                    "route53:*",
+                    "acm:*",
+                    "sqs:*",
+                ],
+                resources=["*"],
+            )
+        )
+
+        # Add SQS event source to the session termination Lambda
+        session_termination_lambda.add_event_source(event_sources.SqsEventSource(termination_queue))
+
+        # Set environment variable for SESSION_TERMINATION_QUEUE_URL
+        backend_lambda.add_environment("SESSION_TERMINATION_QUEUE_URL", termination_queue.queue_url)
+        tasks_lambda.add_environment("SESSION_TERMINATION_QUEUE_URL", termination_queue.queue_url)
+        session_termination_lambda.add_environment("SESSION_TERMINATION_QUEUE_URL", termination_queue.queue_url)
 
         # Create an API Gateway REST API with API key required
         api = apigw.RestApi(

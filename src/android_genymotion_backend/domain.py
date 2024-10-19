@@ -383,28 +383,63 @@ class SessionModel(DynamoDBModel[Session]):
     def end_session(self, session_id: str) -> None:
         try:
             session = self.get_item_by_id(session_id)
-            if session and session.instance:
-                instance_id = session.instance.instance_id
-                instance_model = InstanceModel()
-                # Terminate the instance
-                instance_model.terminate_instance(instance_id)
-                # Delete DNS record
-                self._delete_dns_record(session_id, session.instance.instance_ip)
-                session.instance.ssl_configured = False
-                session.instance.secure_address = None
-                self.update_instance_in_session(session_id, session.instance)
+            if not session:
+                logger.warning(f"Session {session_id} not found.")
+                return
+
+            # Update scheduled_for_deletion to True
             self.table.update_item(
                 Key={
                     self.partition_key_name: self.partition_key_value,
                     self.sort_key_name: session_id,
                 },
-                UpdateExpression="SET end_time = :end_time",
-                ExpressionAttributeValues={":end_time": datetime.now().isoformat()},
+                UpdateExpression="SET scheduled_for_deletion = :scheduled_for_deletion",
+                ExpressionAttributeValues={":scheduled_for_deletion": True},
             )
-            self.update_last_accessed(session_id)
-            logger.info(f"Session {session_id} ended, instance terminated, and DNS record deleted")
+
+            # Enqueue a message to the SessionTerminationQueue
+            self._enqueue_session_termination_task(session_id)
+
+            logger.info(f"Session {session_id} scheduled for termination.")
         except Exception as e:
             logger.error(f"Error ending session {session_id}: {e}")
+            raise
+
+    def _enqueue_session_termination_task(self, session_id: str) -> None:
+        try:
+            sqs = boto3.client("sqs")
+            queue_url = os.environ["SESSION_TERMINATION_QUEUE_URL"]
+            message_body = {
+                "session_id": session_id,
+            }
+            sqs.send_message(QueueUrl=queue_url, MessageBody=json.dumps(message_body))
+            logger.info(f"Enqueued session termination task for session {session_id}")
+        except Exception as e:
+            logger.error(f"Error enqueuing session termination task: {e}")
+            raise
+
+    def end_all_active_sessions(self) -> None:
+        """
+        Ends all sessions that have an active instance and are not scheduled for deletion.
+        """
+        try:
+            sessions = self.get_all_items()
+            active_sessions = [
+                session
+                for session in sessions
+                if session.instance
+                and session.instance.instance_state == "running"
+                and not session.scheduled_for_deletion
+            ]
+
+            logger.info(f"Found {len(active_sessions)} active sessions to terminate.")
+
+            for session in active_sessions:
+                self.end_session(session.SK)
+
+            logger.info("All active sessions have been scheduled for termination.")
+        except Exception as e:
+            logger.error(f"Error ending all active sessions: {e}")
             raise
 
     def _delete_dns_record(self, session_id: str, instance_ip: str) -> None:
@@ -431,27 +466,6 @@ class SessionModel(DynamoDBModel[Session]):
             logger.warning(f"DNS record for {domain_name} already deleted or does not exist")
         except Exception as e:
             logger.error(f"Error deleting DNS record: {e}")
-
-    def end_all_active_sessions(self, background_tasks: BackgroundTasks) -> None:
-        """
-        Ends all sessions that have an active instance.
-        """
-        try:
-            sessions = self.get_all_items()
-            active_sessions = [
-                session for session in sessions if session.instance and session.instance.instance_state == "running"
-            ]
-
-            logger.info(f"Found {len(active_sessions)} active sessions to terminate.")
-
-            for session in active_sessions:
-                # Add each session termination to background tasks
-                background_tasks.add_task(self.end_session, session.SK)
-
-            logger.info("All active sessions have been queued for termination.")
-        except Exception as e:
-            logger.error(f"Error ending all active sessions: {e}")
-            raise
 
     def update_instance_in_session(self, session_id: str, instance_info: Optional[InstanceInfo] = None) -> None:
         try:
