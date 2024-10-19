@@ -2,11 +2,11 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, Generic, List, Optional, TypeVar, Literal
 
 import boto3
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import BackgroundTasks
 from fastapi.encoders import jsonable_encoder
@@ -440,6 +440,55 @@ class SessionModel(DynamoDBModel[Session]):
             logger.info("All active sessions have been scheduled for termination.")
         except Exception as e:
             logger.error(f"Error ending all active sessions: {e}")
+            raise
+
+    def get_inactive_sessions(self, inactivity_minutes: int = 15) -> List[Session]:
+        """
+        Retrieves sessions that have been inactive for the specified number of minutes or more.
+
+        Args:
+            inactivity_minutes (int): The number of minutes to consider a session inactive.
+
+        Returns:
+            List[Session]: List of inactive sessions.
+        """
+        try:
+            current_time = datetime.utcnow()
+            cutoff_time = current_time - timedelta(minutes=inactivity_minutes)
+            cutoff_iso = cutoff_time.isoformat()
+
+            # Initialize variables for pagination
+            sessions = []
+            exclusive_start_key = None
+
+            while True:
+                # Scan the table with filter expressions
+                scan_kwargs = {
+                    "FilterExpression": (
+                        Attr("PK").eq(self.partition_key_value)
+                        & Attr("instance.instance_state").eq("running")
+                        & Attr("scheduled_for_deletion").eq(False)
+                        & Attr("last_accessed_on").lt(cutoff_iso)
+                    ),
+                }
+
+                if exclusive_start_key:
+                    scan_kwargs["ExclusiveStartKey"] = exclusive_start_key
+
+                response = self.table.scan(**scan_kwargs)
+                items = response.get("Items", [])
+
+                sessions.extend([self._deserialize(item) for item in items])
+
+                # Check if there are more items to scan
+                exclusive_start_key = response.get("LastEvaluatedKey")
+                if not exclusive_start_key:
+                    break
+
+            logger.info(f"Found {len(sessions)} inactive sessions.")
+            return sessions
+        except Exception as e:
+            logger.error(f"Error retrieving inactive sessions: {e}")
             raise
 
     def _delete_dns_record(self, session_id: str, instance_ip: str) -> None:

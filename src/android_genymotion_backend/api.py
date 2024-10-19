@@ -1,7 +1,7 @@
 import random
 from typing import List
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 from mangum import Mangum
 
 from application_manager import ApplicationManager
@@ -62,13 +62,25 @@ def create_session(request: CreateSessionRequest) -> Session:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/sessions/list-all-inactive", response_model=List[Session])
+def list_all_inactive_sessions() -> List[Session]:
+    """
+    Retrieve all sessions that are not active (i.e., the instance is not running).
+    """
+    try:
+        sessions = session_model.get_inactive_sessions()
+        return sessions
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/sessions/end-all-active")
-def end_all_active_sessions(background_tasks: BackgroundTasks) -> dict:
+def end_all_active_sessions() -> dict:
     """
     End all sessions that have an active instance running.
     """
     try:
-        session_model.end_all_active_sessions(background_tasks)
+        session_model.end_all_active_sessions()
         return {"message": "All active sessions have been queued for termination."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

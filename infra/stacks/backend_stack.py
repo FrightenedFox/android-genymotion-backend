@@ -1,5 +1,7 @@
 from aws_cdk import BundlingOptions, CfnOutput, Duration, Stack
 from aws_cdk import aws_apigateway as apigw
+from aws_cdk import aws_events as events
+from aws_cdk import aws_events_targets as targets
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as _lambda
 from aws_cdk import aws_lambda_event_sources as event_sources
@@ -7,6 +9,8 @@ from aws_cdk import aws_logs as logs
 from aws_cdk import aws_sqs as sqs
 from constructs import Construct
 
+HOSTED_ZONE_ID = "Z02955531S24W8X23E32A"
+S3_BUCKET_NAME = "android-project"
 
 class BackendStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, stage_name: str, **kwargs) -> None:
@@ -41,7 +45,7 @@ class BackendStack(Stack):
             environment={
                 "STAGE": stage_name,
                 "AWS_ACCOUNT_ID": aws_account_id,
-                "HOSTED_ZONE_ID": "Z02955531S24W8X23E32A",
+                "HOSTED_ZONE_ID": HOSTED_ZONE_ID,
                 "TASK_QUEUE_URL": task_queue.queue_url,
             },
             timeout=Duration.seconds(30),
@@ -81,7 +85,7 @@ class BackendStack(Stack):
             environment={
                 "STAGE": stage_name,
                 "AWS_ACCOUNT_ID": aws_account_id,
-                "HOSTED_ZONE_ID": "Z02955531S24W8X23E32A",
+                "HOSTED_ZONE_ID": HOSTED_ZONE_ID,
             },
             timeout=Duration.seconds(900),
             memory_size=512,
@@ -131,8 +135,8 @@ class BackendStack(Stack):
             environment={
                 "STAGE": stage_name,
                 "AWS_ACCOUNT_ID": aws_account_id,
-                "HOSTED_ZONE_ID": "Z02955531S24W8X23E32A",
-                "S3_BUCKET_NAME": "your-s3-bucket-name",  # Set your actual bucket name
+                "HOSTED_ZONE_ID": HOSTED_ZONE_ID,
+                "S3_BUCKET_NAME": S3_BUCKET_NAME,
             },
             timeout=Duration.seconds(900),
             memory_size=512,
@@ -161,6 +165,56 @@ class BackendStack(Stack):
         backend_lambda.add_environment("SESSION_TERMINATION_QUEUE_URL", termination_queue.queue_url)
         tasks_lambda.add_environment("SESSION_TERMINATION_QUEUE_URL", termination_queue.queue_url)
         session_termination_lambda.add_environment("SESSION_TERMINATION_QUEUE_URL", termination_queue.queue_url)
+
+        # Define the Inactive Session Cleanup Lambda function
+        cleanup_lambda = _lambda.Function(
+            self,
+            "InactiveSessionCleanupLambda",
+            runtime=_lambda.Runtime.PYTHON_3_11,
+            handler="inactive_session_cleanup_handler.handler",
+            code=_lambda.Code.from_asset(
+                "../src/android_genymotion_backend",
+                bundling=BundlingOptions(
+                    image=_lambda.Runtime.PYTHON_3_11.bundling_image,
+                    command=[
+                        "bash",
+                        "-c",
+                        "pip install -r requirements.txt -t /asset-output && cp -r . /asset-output",
+                    ],
+                    platform="linux/x86_64",
+                ),
+            ),
+            environment={
+                "STAGE": stage_name,
+                "AWS_ACCOUNT_ID": aws_account_id,
+                "HOSTED_ZONE_ID": HOSTED_ZONE_ID,
+                "SESSION_TERMINATION_QUEUE_URL": termination_queue.queue_url,
+            },
+            timeout=Duration.seconds(300),
+            memory_size=256,
+            architecture=_lambda.Architecture.X86_64,
+        )
+
+        # Add necessary IAM permissions to the cleanup Lambda
+        cleanup_lambda.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "dynamodb:Scan",
+                    "dynamodb:UpdateItem",
+                    "sqs:SendMessage",
+                ],
+                resources=["*"],
+            )
+        )
+
+        # Create an EventBridge rule to trigger the Lambda every minute
+        rule = events.Rule(
+            self,
+            "InactiveSessionCleanupRule",
+            schedule=events.Schedule.rate(Duration.minutes(1)),
+        )
+
+        rule.add_target(targets.LambdaFunction(cleanup_lambda))
 
         # Create an API Gateway REST API with API key required
         api = apigw.RestApi(
