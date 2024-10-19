@@ -575,7 +575,7 @@ class GameModel(DynamoDBModel[Game]):
         version: str,
         apk_s3_path: str,
         ami_id: str,
-        min_android_version: Optional[str] = None,
+        android_package_name: Optional[str] = None,
         wifi_enabled: bool = True,
         screen_orientation: Literal["horizontal", "vertical"] = "vertical",
     ) -> Game:
@@ -587,7 +587,7 @@ class GameModel(DynamoDBModel[Game]):
                 name=name,
                 game_version=version,
                 apk_s3_path=apk_s3_path,
-                min_android_version=min_android_version,
+                android_package_name=android_package_name,
                 wifi_enabled=wifi_enabled,
                 screen_orientation=screen_orientation,
             )

@@ -47,8 +47,8 @@ class Game(BaseModel):
     SK: str  # Sort key (UUID)
     name: str
     game_version: str
+    android_package_name: str
     apk_s3_path: Optional[str] = None
-    min_android_version: Optional[str] = None
     wifi_enabled: bool = True
     screen_orientation: Literal["horizontal", "vertical"] = "vertical"
 
@@ -75,9 +75,9 @@ class CreateSessionRequest(BaseModel):
 class CreateGameRequest(BaseModel):
     name: str
     game_version: str
-    apk_s3_path: str
+    android_package_name: str
+    apk_s3_path: Optional[str] = None
     ami_id: Optional[str] = None
-    min_android_version: Optional[str] = None
     wifi_enabled: bool = True
     screen_orientation: Literal["horizontal", "vertical"] = "vertical"
 

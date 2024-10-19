@@ -175,7 +175,7 @@ def create_game(request: CreateGameRequest) -> Game:
         version=request.game_version,
         apk_s3_path=request.apk_s3_path,
         ami_id=request.ami_id,
-        min_android_version=request.min_android_version,
+        android_package_name=request.android_package_name,
         screen_orientation=request.screen_orientation,
     )
     return game
