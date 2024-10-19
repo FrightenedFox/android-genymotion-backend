@@ -33,7 +33,6 @@ class Session(BaseModel):
 class AMI(BaseModel):
     PK: str = "AMI"  # Partition key
     SK: str  # Sort key (UUID)
-    ami_id: str
     instance_type: str
     disk_size: int
     android_version: str

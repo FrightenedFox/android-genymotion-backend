@@ -528,11 +528,9 @@ class AMIModel(DynamoDBModel[AMI]):
         screen_height: int,
     ) -> AMI:
         try:
-            ami_uuid = str(uuid.uuid4())
             ami = AMI(
                 PK=self.partition_key_value,
-                SK=ami_uuid,
-                ami_id=ami_id,
+                SK=ami_id,
                 instance_type=instance_type,
                 disk_size=disk_size,
                 android_version=android_version,
@@ -540,7 +538,7 @@ class AMIModel(DynamoDBModel[AMI]):
                 screen_height=screen_height,
             )
             self.create_item(ami)
-            logger.info(f"AMI {ami_uuid} created: {ami_id} with instance type {instance_type}")
+            logger.info(f"AMI {ami_id} created with instance type {instance_type}")
             return ami
         except Exception as e:
             logger.error(f"Error creating AMI: {e}")
@@ -556,7 +554,7 @@ class AMIModel(DynamoDBModel[AMI]):
     def list_all_amis(self) -> List[AMI]:
         try:
             return self.get_all_items()
-        except Exception as e:
+        except Exception:
             logger.error("Error retrieving all AMIs")
             raise
 
