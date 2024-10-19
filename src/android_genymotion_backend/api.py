@@ -110,6 +110,8 @@ def create_session(year: int, request: CreateSessionRequest) -> Session:
             browser_info=request.browser_info,
         )
         return session
+    except VcpuLimitExceededException as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
