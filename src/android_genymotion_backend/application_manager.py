@@ -120,12 +120,12 @@ class ApplicationManager:
     #     logger.info("Screen recording stopped.")
 
     def _start_screen_recording(self, address: str, instance_id: str, game_id: str, video_id: str):
-        script = """
+        script = f"""
         STOP_RECORDING=false
         mkdir -p /sdcard/recordings
         counter=1
         while [ "$STOP_RECORDING" != "true" ]; do
-            screenrecord --time-limit 180 "/sdcard/recordings/recording_{game_id}_{video_id}_part${counter}.mp4"
+            screenrecord --time-limit 180 "/sdcard/recordings/recording_{game_id}_{video_id}_part${{counter}}.mp4"
             counter=$((counter + 1))
         done
         """
@@ -335,11 +335,13 @@ class ApplicationManager:
                 filename = os.path.basename(file_path)
                 if filename.startswith("recording_") and filename.endswith(".mp4"):
                     parts = filename[len("recording_") : -len(".mp4")].split("_")
-                    if len(parts) == 2:
-                        game_id, video_id = parts
+                    if len(parts) == 3:
+                        game_id, video_id, part_name = parts
                     else:
                         logger.warning(f"Unexpected recording file name format: {filename}")
                         continue
+
+                    video_id = f"{video_id}_{part_name}"
 
                     # Create Video entry
                     video = self.video_model.create_video(

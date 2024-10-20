@@ -12,7 +12,7 @@ from fastapi.encoders import jsonable_encoder
 from ksuid import ksuid
 
 from schemas import Game, InstanceInfo, Session, Video, AMI, CompleteInstanceInfo, SessionPing, SessionWithPing
-from utils import custom_requests, execute_shell_command
+from utils import custom_requests, execute_shell_command, genymotion_request
 
 # Configure logging
 logger = logging.getLogger()
@@ -443,6 +443,32 @@ class SessionModel(DynamoDBModel[Session]):
             logger.info(f"DNS record created for {domain_name} pointing to {instance_ip}")
         except Exception as e:
             logger.error(f"Error creating DNS record: {e}")
+
+    def wait_for_genymotion_api(self, session_id: str, timeout: int = 300) -> None:
+        import time
+
+        session = self.get_session_by_id(session_id)
+        if not session:
+            logger.error(f"Session {session_id} not found.")
+            return
+        instance_info = self.instance_model.get_instance_info(session.instance.instance_id)
+        if not instance_info or not instance_info.instance_ip:
+            logger.error(f"Instance info not found for session {session_id}")
+            return
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            response = genymotion_request(
+                address=instance_info.instance_ip, instance_id=instance_info.instance_id, method="GET",
+                endpoint="/android/version", verify_ssl=False
+            )
+            if response.status_code == 200:
+                logger.info(f"Genymotion API is up for session {session_id}")
+                return
+            else:
+                time.sleep(5)
+        logger.error(f"Genymotion API did not become available within timeout for session {session_id}")
+
 
     def configure_instance_certificate(self, session_id: str, instance_info: CompleteInstanceInfo) -> None:
         try:

@@ -32,8 +32,8 @@ def handler(event, context):
             # Create DNS record
             session_model.create_dns_record(session_id, instance_info.instance_ip)
 
-            # Sleep for 5 seconds to allow DNS record to propagate and instance to be ready
-            time.sleep(5)
+            # Wait for Genymotion API to be available
+            session_model.wait_for_genymotion_api(session_id)
 
             # Configure SSL certificate
             session_model.configure_instance_certificate(session_id, instance_info)
