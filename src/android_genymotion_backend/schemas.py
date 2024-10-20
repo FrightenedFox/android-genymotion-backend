@@ -5,28 +5,34 @@ from typing import Optional, Literal
 from pydantic import BaseModel
 
 
-# New Pydantic model for instance info
 class InstanceInfo(BaseModel):
     instance_id: str
     instance_type: str
-    instance_state: Optional[str]
-    instance_ip: Optional[str] = None
-    instance_aws_address: Optional[str] = None
-    ssl_configured: bool = False
-    secure_address: Optional[str] = None
 
 
-# Schema for Session entity
+class CompleteInstanceInfo(InstanceInfo):
+    instance_state: str
+    instance_ip: str
+    instance_aws_address: str
+
+
 class Session(BaseModel):
     PK: str = "SESSION"  # Partition key
-    SK: str  # Sort key (KSUID)
-    instance: Optional[InstanceInfo]
+    SK: str  # Session ID (KSUID)
+    instance: Optional[InstanceInfo | CompleteInstanceInfo]
     ami_id: str = "ami-0f608f5544f94803b"
+    ssl_configured: bool = False
     user_ip: Optional[str] = None
     browser_info: Optional[str] = None
     start_time: str
     end_time: Optional[str] = None
-    last_accessed_on: Optional[str] = None
+
+
+class SessionPing(BaseModel):
+    PK: str = "SESSION#PING"  # Partition key
+    SK: str  # Session ID (KSUID)
+    instance_active: bool
+    last_accessed_on: str
     scheduled_for_deletion: bool = False
 
 

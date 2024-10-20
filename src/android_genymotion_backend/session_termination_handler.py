@@ -1,8 +1,9 @@
 import json
 import logging
 from datetime import datetime
-from domain import SessionModel, InstanceModel
+
 from application_manager import ApplicationManager
+from domain import SessionModel
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -19,7 +20,6 @@ def handler(event, context):
             logger.info(f"Processing session termination for session {session_id}")
 
             session_model = SessionModel()
-            instance_model = InstanceModel()
             app_manager = ApplicationManager()
 
             # Fetch the session
@@ -37,10 +37,13 @@ def handler(event, context):
             app_manager.upload_all_recordings_to_s3(session_id)
 
             # Terminate the EC2 instance
-            instance_model.terminate_instance(instance_id)
+            session_model.instance_model.terminate_instance(instance_id)
+
+            # Update instance_active to False
+            session_model.session_ping_model.update_instance_active(session_id, False)
 
             # Delete DNS record
-            session_model._delete_dns_record(session_id, session.instance.instance_ip)
+            session_model.delete_dns_record(session_id, session.instance.instance_ip)
 
             # Update session's end_time and set scheduled_for_deletion to False
             session_model.table.update_item(
@@ -48,8 +51,16 @@ def handler(event, context):
                     session_model.partition_key_name: session_model.partition_key_value,
                     session_model.sort_key_name: session_id,
                 },
-                UpdateExpression="SET end_time = :end_time, scheduled_for_deletion = :scheduled_for_deletion",
-                ExpressionAttributeValues={":end_time": datetime.now().isoformat(), ":scheduled_for_deletion": False},
+                UpdateExpression="SET end_time = :end_time",
+                ExpressionAttributeValues={":end_time": datetime.now().isoformat()},
+            )
+            session_model.table.update_item(
+                Key={
+                    session_model.partition_key_name: session_model.session_ping_model.partition_key_value,
+                    session_model.sort_key_name: session_id,
+                },
+                UpdateExpression="SET scheduled_for_deletion = :scheduled_for_deletion",
+                ExpressionAttributeValues={":scheduled_for_deletion": False},
             )
 
             logger.info(f"Session {session_id} terminated successfully.")

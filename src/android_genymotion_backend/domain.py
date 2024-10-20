@@ -12,6 +12,7 @@ from fastapi import BackgroundTasks
 from fastapi.encoders import jsonable_encoder
 from ksuid import ksuid
 
+from android_genymotion_backend.schemas import CompleteInstanceInfo, SessionPing
 from schemas import Game, InstanceInfo, Session, Video, AMI
 from utils import custom_requests
 
@@ -162,11 +163,8 @@ class InstanceModel:
             instance = response["Instances"][0]
             instance_id = instance["InstanceId"]
             instance_type = instance["InstanceType"]
-            instance_state = instance["State"]["Name"]
-            instance_info = InstanceInfo(
-                instance_id=instance_id, instance_type=instance_type, instance_state=instance_state
-            )
-            logger.info(f"Created EC2 instance {instance_id} with state {instance_state}")
+            instance_info = InstanceInfo(instance_id=instance_id, instance_type=instance_type)
+            logger.info(f"Created EC2 instance {instance_id} of type {instance_type}")
             return instance_info
         except (BotoCoreError, ClientError) as e:
             if "VcpuLimitExceeded" in str(e):
@@ -186,7 +184,7 @@ class InstanceModel:
             logger.error(f"Error terminating EC2 instance {instance_id}: {e}")
             raise
 
-    def get_instance_info(self, instance_id: str) -> Optional[InstanceInfo]:
+    def get_instance_info(self, instance_id: str) -> Optional[CompleteInstanceInfo]:
         try:
             response = self.ec2.describe_instances(InstanceIds=[instance_id])
             reservations = response["Reservations"]
@@ -199,7 +197,7 @@ class InstanceModel:
             ip_address = instance.get("PublicIpAddress")
             aws_address = instance.get("PublicDnsName")
 
-            return InstanceInfo(
+            return CompleteInstanceInfo(
                 instance_id=instance_id,
                 instance_type=instance["InstanceType"],
                 instance_state=state,
@@ -210,7 +208,7 @@ class InstanceModel:
             logger.error(f"Error getting info for EC2 instance {instance_id}: {e}")
             return None
 
-    def get_instances_info(self, instance_ids: List[str]) -> Dict[str, Optional[InstanceInfo]]:
+    def get_instances_info(self, instance_ids: List[str]) -> Dict[str, Optional[CompleteInstanceInfo]]:
         """
         Returns a mapping from instance IDs to their full instance information.
         If an instance is not found, its information is set to None.
@@ -230,7 +228,7 @@ class InstanceModel:
                         ip_address = instance.get("PublicIpAddress")
                         aws_address = instance.get("PublicDnsName")
 
-                        instances_info[instance_id] = InstanceInfo(
+                        instances_info[instance_id] = CompleteInstanceInfo(
                             instance_id=instance_id,
                             instance_type=instance["InstanceType"],
                             instance_state=state,
@@ -245,12 +243,12 @@ class InstanceModel:
                     instances_info[missing_id] = None
         except (BotoCoreError, ClientError) as e:
             logger.error(f"Error getting info for instances: {e}")
-            # Set info for all IDs to None in case of error
-            for instance_id in instance_ids:
-                instances_info[instance_id] = None
+            # # Set info for all IDs to None in case of error
+            # for instance_id in instance_ids:
+            #     instances_info[instance_id] = None
         return instances_info
 
-    def wait_for_instance_running(self, instance_id: str, timeout: int = 300) -> Optional[InstanceInfo]:
+    def wait_for_instance_running(self, instance_id: str, timeout: int = 300) -> Optional[CompleteInstanceInfo]:
         import time
 
         start_time = time.time()
@@ -264,39 +262,124 @@ class InstanceModel:
         return None
 
 
-# Session domain class
-class SessionModel(DynamoDBModel[Session]):
-    partition_key_value: str = "SESSION"
+class SessionPingModel(DynamoDBModel[SessionPing]):
+    partition_key_value: str = "SESSION#PING"
 
-    @staticmethod
-    def domain_name(session_id: str) -> str:
-        return f"{session_id}.session.morskyi.org"
+    def _deserialize(self, data: Dict[str, Any]) -> SessionPing:
+        return SessionPing(**data)
 
-    def _deserialize(self, data: Dict[str, Any]) -> Session:
-        return Session(**data)
-
-    def update_last_accessed(self, session_id: str) -> None:
+    def update_last_accessed(self, session_id: str, instance_active: bool = True) -> None:
         # Check if the session exists
         session = self.get_item_by_id(session_id)
         if not session:
-            logger.warning(f"Session {session_id} not found. Cannot update last_accessed_on.")
+            logger.warning(f"SessionPing {session_id} not found. Creating new one")
+            self.create_item(
+                SessionPing(SK=session_id, last_accessed_on=datetime.now().isoformat(), instance_active=instance_active)
+            )
             return
+        else:
+            self.table.update_item(
+                Key={
+                    self.partition_key_name: self.partition_key_value,
+                    self.sort_key_name: session_id,
+                },
+                UpdateExpression="SET last_accessed_on = :last_accessed_on, instance_active = :instance_active",
+                ExpressionAttributeValues={
+                    ":last_accessed_on": datetime.now().isoformat(),
+                    ":instance_active": instance_active,
+                },
+            )
+            logger.info(f"Updated last_accessed_on and {instance_active=} for SessionPing {session_id}")
 
-        # Proceed with updating the last accessed time
+    def update_instance_active(self, session_id: str, instance_active: bool = True) -> None:
         self.table.update_item(
             Key={
                 self.partition_key_name: self.partition_key_value,
                 self.sort_key_name: session_id,
             },
-            UpdateExpression="SET last_accessed_on = :last_accessed_on",
-            ExpressionAttributeValues={":last_accessed_on": datetime.now().isoformat()},
+            UpdateExpression="SET instance_active = :instance_active",
+            ExpressionAttributeValues={":instance_active": instance_active},
         )
-        logger.info(f"Updated last_accessed_on for session {session_id}")
+        logger.info(f"Updated {instance_active=} for SessionPing {session_id}")
+
+    def update_scheduled_for_deletion(self, session_id: str, scheduled_for_deletion: bool = True) -> None:
+        self.table.update_item(
+            Key={
+                self.partition_key_name: self.partition_key_value,
+                self.sort_key_name: session_id,
+            },
+            UpdateExpression="SET scheduled_for_deletion = :scheduled_for_deletion",
+            ExpressionAttributeValues={":scheduled_for_deletion": scheduled_for_deletion},
+        )
+        logger.info(f"Updated {scheduled_for_deletion=} for SessionPing {session_id}")
+
+    def get_inactive_session_pings(self, inactivity_minutes: int = 15) -> List[SessionPing]:
+        try:
+            current_time = datetime.now()
+            cutoff_time = current_time - timedelta(minutes=inactivity_minutes)
+            cutoff_iso = cutoff_time.isoformat()
+
+            # Initialize variables for pagination
+            session_pings = []
+            exclusive_start_key = None
+
+            while True:
+                # Scan the table with filter expressions
+                scan_kwargs = {
+                    "FilterExpression": (
+                        Attr("PK").eq(self.partition_key_value)
+                        & Attr("instance_active").eq(True)
+                        & Attr("scheduled_for_deletion").eq(False)
+                        & Attr("last_accessed_on").lt(cutoff_iso)
+                    ),
+                }
+
+                if exclusive_start_key:
+                    scan_kwargs["ExclusiveStartKey"] = exclusive_start_key
+
+                response = self.table.scan(**scan_kwargs)
+                items = response.get("Items", [])
+
+                session_pings.extend([self._deserialize(item) for item in items])
+
+                # Check if there are more items to scan
+                exclusive_start_key = response.get("LastEvaluatedKey")
+                if not exclusive_start_key:
+                    break
+
+            logger.info(f"Found {len(session_pings)} inactive session_pings.")
+            return session_pings
+        except Exception as e:
+            logger.error(f"Error retrieving inactive sessions: {e}")
+            raise
+
+
+class SessionModel(DynamoDBModel[Session]):
+    partition_key_value: str = "SESSION"
+
+    def __init__(self):
+        super().__init__()
+        self.session_ping_model = SessionPingModel()
+        self.instance_model = InstanceModel()
+
+    def _deserialize(self, data: Dict[str, Any]) -> Session:
+        return Session(**data)
+
+    @staticmethod
+    def domain_name(session_id: str) -> str:
+        return f"{session_id}.session.morskyi.org"
+
+    def get_session_by_id(self, session_id: str) -> Optional[Session]:
+        try:
+            session = self.get_item_by_id(session_id)
+            session.instance = InstanceModel().get_instance_info(session.instance.instance_id)
+            return session
+        except Exception as e:
+            logger.error(f"Error retrieving session with ID {session_id}: {e}")
 
     def create_session(self, ami_id: str, user_ip: Optional[str], browser_info: Optional[str]) -> Session:
         try:
-            instance_model = InstanceModel()
-            instance_info = instance_model.create_instance(ami_id)
+            instance_info = self.instance_model.create_instance(ami_id)
             session_id = ksuid().__str__()
             session = Session(
                 PK=self.partition_key_value,
@@ -308,18 +391,20 @@ class SessionModel(DynamoDBModel[Session]):
                 start_time=datetime.now().isoformat(),
             )
             self.create_item(session)
-            self.update_last_accessed(session_id)
+            self.session_ping_model.create_item(
+                SessionPing(SK=session_id, instance_active=True, last_accessed_on=datetime.now().isoformat())
+            )
             logger.info(f"Session {session_id} created with instance {instance_info.instance_id}")
 
             # Send a message to the SQS queue
-            self._enqueue_background_task(session_id, instance_info)
+            self._enqueue_session_creation_task(session_id, instance_info)
 
             return session
         except Exception as e:
             logger.error(f"Error creating session: {e}")
             raise
 
-    def _enqueue_background_task(self, session_id: str, instance_info: InstanceInfo) -> None:
+    def _enqueue_session_creation_task(self, session_id: str, instance_info: InstanceInfo) -> None:
         try:
             sqs = boto3.client("sqs")
             queue_url = os.environ["TASK_QUEUE_URL"]
@@ -332,20 +417,6 @@ class SessionModel(DynamoDBModel[Session]):
         except Exception as e:
             logger.error(f"Error enqueuing background task: {e}")
             raise
-
-    def _setup_dns_and_certificate(self, session_id: str, instance_info: InstanceInfo) -> None:
-        # Wait for instance to be running and get IP
-        instance_model = InstanceModel()
-        instance_info = instance_model.wait_for_instance_running(instance_info.instance_id)
-
-        if instance_info and instance_info.instance_ip:
-            # Create DNS record
-            self.create_dns_record(session_id, instance_info.instance_ip)
-
-            # Make API call to the instance
-            self.configure_instance_certificate(session_id, instance_info)
-        else:
-            logger.error(f"Instance {instance_info.instance_id} did not reach running state or has no public IP.")
 
     def create_dns_record(self, session_id: str, instance_ip: str) -> None:
         route53 = boto3.client("route53")
@@ -370,9 +441,8 @@ class SessionModel(DynamoDBModel[Session]):
         except Exception as e:
             logger.error(f"Error creating DNS record: {e}")
 
-    def configure_instance_certificate(self, session_id: str, instance_info: InstanceInfo) -> None:
+    def configure_instance_certificate(self, session_id: str, instance_info: CompleteInstanceInfo) -> None:
         try:
-            # wait for 15 seconds before configuring the certificate
             url = f"https://{instance_info.instance_ip}/api/v1/configuration/certificate"
             data = [self.domain_name(session_id)]
             auth = ("genymotion", instance_info.instance_id)
@@ -381,10 +451,14 @@ class SessionModel(DynamoDBModel[Session]):
             )
             if str(response.status_code).startswith("2"):
                 logger.info(f"Certificate configured on instance {instance_info.instance_id}")
-                # Update ssl_configured to True
-                instance_info.ssl_configured = True
-                instance_info.secure_address = self.domain_name(session_id)
-                self.update_instance_in_session(session_id, instance_info)
+                self.table.update_item(
+                    Key={
+                        self.partition_key_name: self.partition_key_value,
+                        self.sort_key_name: session_id,
+                    },
+                    UpdateExpression="SET ssl_configured = :ssl_configured",
+                    ExpressionAttributeValues={":ssl_configured": True},
+                )
             else:
                 logger.error(f"Failed to configure certificate: {response.status_code}, {response.text}")
         except Exception as e:
@@ -397,17 +471,8 @@ class SessionModel(DynamoDBModel[Session]):
                 logger.warning(f"Session {session_id} not found.")
                 return
 
-            # Update scheduled_for_deletion to True
-            self.table.update_item(
-                Key={
-                    self.partition_key_name: self.partition_key_value,
-                    self.sort_key_name: session_id,
-                },
-                UpdateExpression="SET scheduled_for_deletion = :scheduled_for_deletion",
-                ExpressionAttributeValues={":scheduled_for_deletion": True},
-            )
-
             # Enqueue a message to the SessionTerminationQueue
+            self.session_ping_model.update_scheduled_for_deletion(session_id)
             self._enqueue_session_termination_task(session_id)
 
             logger.info(f"Session {session_id} scheduled for termination.")
@@ -428,18 +493,14 @@ class SessionModel(DynamoDBModel[Session]):
             logger.error(f"Error enqueuing session termination task: {e}")
             raise
 
-    def end_all_active_sessions(self) -> None:
+    def end_all_running_sessions(self) -> None:
         """
-        Ends all sessions that have an active instance and are not scheduled for deletion.
+        Ends all sessions that have an active instance.
         """
         try:
             sessions = self.get_all_items()
             active_sessions = [
-                session
-                for session in sessions
-                if session.instance
-                and session.instance.instance_state == "running"
-                and not session.scheduled_for_deletion
+                session for session in sessions if session.instance and session.instance.instance_state == "running"
             ]
 
             logger.info(f"Found {len(active_sessions)} active sessions to terminate.")
@@ -453,55 +514,10 @@ class SessionModel(DynamoDBModel[Session]):
             raise
 
     def get_inactive_sessions(self, inactivity_minutes: int = 15) -> List[Session]:
-        """
-        Retrieves sessions that have been inactive for the specified number of minutes or more.
+        session_pings = self.session_ping_model.get_inactive_session_pings(inactivity_minutes)
+        return [self.get_session_by_id(ping.SK) for ping in session_pings]
 
-        Args:
-            inactivity_minutes (int): The number of minutes to consider a session inactive.
-
-        Returns:
-            List[Session]: List of inactive sessions.
-        """
-        try:
-            current_time = datetime.now()
-            cutoff_time = current_time - timedelta(minutes=inactivity_minutes)
-            cutoff_iso = cutoff_time.isoformat()
-
-            # Initialize variables for pagination
-            sessions = []
-            exclusive_start_key = None
-
-            while True:
-                # Scan the table with filter expressions
-                scan_kwargs = {
-                    "FilterExpression": (
-                        Attr("PK").eq(self.partition_key_value)
-                        & Attr("instance.instance_state").eq("running")
-                        & Attr("scheduled_for_deletion").eq(False)
-                        & Attr("last_accessed_on").lt(cutoff_iso)
-                    ),
-                }
-
-                if exclusive_start_key:
-                    scan_kwargs["ExclusiveStartKey"] = exclusive_start_key
-
-                response = self.table.scan(**scan_kwargs)
-                items = response.get("Items", [])
-
-                sessions.extend([self._deserialize(item) for item in items])
-
-                # Check if there are more items to scan
-                exclusive_start_key = response.get("LastEvaluatedKey")
-                if not exclusive_start_key:
-                    break
-
-            logger.info(f"Found {len(sessions)} inactive sessions.")
-            return sessions
-        except Exception as e:
-            logger.error(f"Error retrieving inactive sessions: {e}")
-            raise
-
-    def _delete_dns_record(self, session_id: str, instance_ip: str) -> None:
+    def delete_dns_record(self, session_id: str, instance_ip: str) -> None:
         route53 = boto3.client("route53")
         domain_name = self.domain_name(session_id)
         try:
@@ -526,71 +542,20 @@ class SessionModel(DynamoDBModel[Session]):
         except Exception as e:
             logger.error(f"Error deleting DNS record: {e}")
 
-    def update_instance_in_session(self, session_id: str, instance_info: Optional[InstanceInfo] = None) -> None:
-        try:
-            session = self.get_item_by_id(session_id)
-            if not session or not session.instance:
-                logger.warning(f"Session {session_id} not found or has no associated instance.")
-                return
-
-            # If instance_info is not provided, fetch it from AWS
-            if not instance_info:
-                instance_model = InstanceModel()
-                instance_info = instance_model.get_instance_info(session.instance.instance_id)
-                if not instance_info:
-                    logger.warning(f"Could not retrieve AWS instance info for session {session_id}")
-                    return
-                instance_info.ssl_configured = session.instance.ssl_configured
-                instance_info.secure_address = session.instance.secure_address
-
-            # Update the session's instance information
-            session.instance = instance_info
-            self.table.update_item(
-                Key={
-                    self.partition_key_name: self.partition_key_value,
-                    self.sort_key_name: session_id,
-                },
-                UpdateExpression="SET instance = :instance",
-                ExpressionAttributeValues={":instance": session.instance.model_dump()},
-            )
-            logger.info(f"Updated instance info for session {session_id}")
-
-        except Exception as e:
-            logger.error(f"Error updating instance info for session {session_id}: {e}")
-            raise
-
     def get_all_sessions_with_updated_info(self, only_active: bool = False) -> List[Session]:
-        """
-        Retrieves all sessions and updates their instance information.
-        If `only_active` is True, returns only sessions with active instances.
-        """
         try:
             sessions = self.get_all_items()
             instance_ids = [session.instance.instance_id for session in sessions if session.instance]
             logger.info(f"Retrieved {len(sessions)} sessions, instances: {instance_ids}")
             if instance_ids:
-                instance_model = InstanceModel()
-                aws_instances_info = instance_model.get_instances_info(instance_ids)
+                aws_instances_info = self.instance_model.get_instances_info(instance_ids)
                 # Update each session's instance information
                 for session in sessions:
                     if not session.instance:
                         continue
-                    aws_instance_info = aws_instances_info.get(session.instance.instance_id)
-                    if aws_instance_info:
-                        aws_instance_info.ssl_configured = session.instance.ssl_configured
-                        aws_instance_info.secure_address = session.instance.secure_address
+                    aws_instance_info = aws_instances_info.get(session.instance.instance_id, None)
                     session.instance = aws_instance_info
-                    # Update DynamoDB with the new instance information
-                    self.table.update_item(
-                        Key={
-                            self.partition_key_name: self.partition_key_value,
-                            self.sort_key_name: session.SK,
-                        },
-                        UpdateExpression="SET instance = :instance",
-                        ExpressionAttributeValues={
-                            ":instance": session.instance.model_dump() if session.instance else None
-                        },
-                    )
+
             # If only_active is True, filter out non-active sessions
             if only_active:
                 sessions = [

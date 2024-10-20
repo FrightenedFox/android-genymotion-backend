@@ -7,6 +7,7 @@ import requests
 from ksuid import ksuid
 from requests import Response
 
+
 from domain import SessionModel, GameModel, VideoModel, logger
 from utils import genymotion_request
 
@@ -24,7 +25,7 @@ class ApplicationManager:
             logger.error(f"Session {session_id} not found or instance not available.")
             return None, None
 
-        address = session.instance.secure_address
+        address = self.session_model.domain_name(session.SK)
         instance_id = session.instance.instance_id
 
         if not address:

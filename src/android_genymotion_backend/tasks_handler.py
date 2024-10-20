@@ -22,10 +22,9 @@ def handler(event, context):
 
             # Perform background tasks
             session_model = SessionModel()
-            instance_model = InstanceModel()
 
             # Wait for instance to be running
-            instance_info = instance_model.wait_for_instance_running(instance_id)
+            instance_info = session_model.instance_model.wait_for_instance_running(instance_id)
             if not instance_info:
                 logger.error(f"Instance {instance_id} did not become running")
                 continue
@@ -33,8 +32,8 @@ def handler(event, context):
             # Create DNS record
             session_model.create_dns_record(session_id, instance_info.instance_ip)
 
-            # Sleep for 15 seconds to allow DNS record to propagate and instance to be ready
-            time.sleep(15)
+            # Sleep for 5 seconds to allow DNS record to propagate and instance to be ready
+            time.sleep(5)
 
             # Configure SSL certificate
             session_model.configure_instance_certificate(session_id, instance_info)

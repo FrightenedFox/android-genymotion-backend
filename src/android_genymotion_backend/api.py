@@ -74,13 +74,13 @@ def list_all_inactive_sessions() -> List[Session]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/sessions/end-all-active")
+@app.post("/sessions/end-all-running")
 def end_all_active_sessions() -> dict:
     """
     End all sessions that have an active instance running.
     """
     try:
-        session_model.end_all_active_sessions()
+        session_model.end_all_running_sessions()
         return {"message": "All active sessions have been queued for termination."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -123,10 +123,9 @@ def get_session(session_id: str) -> Session:
     """
     try:
         # Update the instance state before returning the session
-        session_model.update_instance_in_session(session_id)
-        item = session_model.get_item_by_id(session_id)
+        item = session_model.get_session_by_id(session_id)
         if item:
-            session_model.update_last_accessed(session_id)
+            session_model.session_ping_model.update_last_accessed(session_id)
             return item
         else:
             raise HTTPException(status_code=404, detail="Session not found")
