@@ -452,21 +452,26 @@ class SessionModel(DynamoDBModel[Session]):
             response = custom_requests(total_retries=9, backoff_factor=1.5, connect_timeout=5, read_timeout=15).post(
                 url, json=data, auth=auth, verify=False  # Since the certificate might not be valid yet
             )
+            success = False
             if response.status_code == 404:
-                command = (
-                    "am startservice -a genymotionacme.generate -n com.genymobile.genymotionacme/.AcmeService.generate"
-                    f" --esal genymotionacme.generate.EXTRAS_DOMAIN_NAMES {self.domain_name(session_id)}"
-                )
+                commands = [
+                    'setprop persist.tls.acme.domains {"user_dns":"%s"}' % self.domain_name(session_id),
+                    "am startservice -a genymotionacme.generate -n com.genymobile.genymotionacme/.AcmeService",
+                ]
                 logger.error(
                     f"Failed to configure certificate normally: {response.status_code}, {response.text}. Retrying with"
-                    f" shell method, command: {command}..."
+                    f" shell method, command: {commands}..."
                 )
                 new_response = execute_shell_command(
-                    instance_info.instance_ip, instance_info.instance_id, command, logger, verify_ssl=False
+                    instance_info.instance_ip, instance_info.instance_id, commands, logger, verify_ssl=False
                 )
-                logger.info(f"Shell command response: {new_response}")
+                logger.info(f"Shell command response: {new_response.text}")
+                success = new_response.status_code == 200 or new_response.text.startswith("Starting service: Intent")
+                if success:
+                    import time
+                    time.sleep(15)  # Wait for the service to start
 
-            if str(response.status_code).startswith("2"):
+            if success or str(response.status_code).startswith("2"):
                 logger.info(f"Certificate configured on instance {instance_info.instance_id}")
                 self.table.update_item(
                     Key={
@@ -511,7 +516,7 @@ class SessionModel(DynamoDBModel[Session]):
             logger.error(f"Error enqueuing session termination task: {e}")
             raise
 
-    def end_all_running_sessions(self) -> List[SessionWithPing]:
+    def end_all_running_sessions(self) -> List[Session]:
         """
         Ends all sessions that have an active instance.
         """

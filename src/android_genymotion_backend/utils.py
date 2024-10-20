@@ -119,7 +119,7 @@ def custom_requests(
 def execute_shell_command(
     address: str,
     instance_id: str,
-    command: str,
+    commands: str | list[str],
     logger: Optional[logging.Logger] = None,
 verify_ssl: bool = True,
 ) -> Response:
@@ -129,15 +129,15 @@ verify_ssl: bool = True,
     Args:
         address (str): The secure address.
         instance_id (str): The instance ID.
-        command (str): The shell command to execute.
+        commands (str or list[str]): The shell command(s) to execute.
         logger (Optional[logging.Logger]): Logger object.
         verify_ssl (bool): Whether to verify SSL certificates.
     """
     endpoint = "/android/shell"
-    data = {"commands": [command], "timeout_in_seconds": 10}
+    data = {"commands": commands if isinstance(commands, list) else [commands], "timeout_in_seconds": 10}
 
     if logger:
-        logger.info(f"Executing shell command on {address}: {command}")
+        logger.info(f"Executing shell command on {address}: {commands}")
     response = genymotion_request(
         address=address, instance_id=instance_id, method="POST", endpoint=endpoint, data=data, verify_ssl=verify_ssl
     )
