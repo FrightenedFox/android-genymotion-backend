@@ -4,9 +4,8 @@ from typing import List
 from fastapi import FastAPI, HTTPException
 from mangum import Mangum
 
-from android_genymotion_backend.schemas import SessionPing
 from application_manager import ApplicationManager
-from domain import GameModel, SessionModel, VideoModel, AMIModel, VcpuLimitExceededException
+from domain import GameModel, SessionModel, VideoModel, AMIModel, VcpuLimitExceededException, SessionPing
 from schemas import (
     CreateGameRequest,
     CreateSessionRequest,
