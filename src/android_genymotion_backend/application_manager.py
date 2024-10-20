@@ -123,26 +123,37 @@ class ApplicationManager:
         """
         Starts long-duration screen recording by chaining multiple screenrecord commands.
         """
+        # Create a control file path
+        control_file = "/sdcard/recordings/stop_recording.flag"
+
+        # Properly format the shell script with semicolons and redirects
         script = f"""
-            STOP_RECORDING=false;
+            touch {control_file};
             mkdir -p /sdcard/recordings;
             counter=1;
-            while [ "$STOP_RECORDING" != "true" ]; do
+            while [ ! -f {control_file} ]; do
                 screenrecord --time-limit 180 "/sdcard/recordings/recording_{game_id}_{video_id}_part${{counter}}.mp4";
                 counter=$((counter + 1));
-            done
+            done;
+            rm {control_file};
             """
 
+        # Combine the script into a single line and redirect all output to /dev/null
         full_command = f"nohup sh -c '{script}' >/dev/null 2>&1 &"
 
         execute_shell_command(address, instance_id, full_command)
         logger.info("Long-duration screen recording started.")
 
     def _stop_screen_recording(self, address: str, instance_id: str):
-        # Set the STOP_RECORDING flag
-        execute_shell_command(address, instance_id, "export STOP_RECORDING=true", logger)
-        execute_shell_command(address, instance_id, "pkill -INT screenrecord", logger)
-        logger.info("Screen recording stopped.")
+        """
+        Stops long-duration screen recording by creating a stop flag.
+        """
+        # Path to the control file
+        control_file = "/sdcard/recordings/stop_recording.flag"
+
+        # Create the stop flag file
+        execute_shell_command(address, instance_id, f"touch {control_file}")
+        logger.info("Screen recording stop signal sent.")
 
     def _list_recording_files(self, address: str, instance_id: str) -> List[str]:
         """

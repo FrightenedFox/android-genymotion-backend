@@ -458,10 +458,16 @@ class SessionModel(DynamoDBModel[Session]):
 
         start_time = time.time()
         while time.time() - start_time < timeout:
-            response = genymotion_request(
-                address=instance_info.instance_ip, instance_id=instance_info.instance_id, method="GET",
-                endpoint="/android/version", verify_ssl=False
-            )
+            try:
+                response = genymotion_request(
+                    address=instance_info.instance_ip, instance_id=instance_info.instance_id, method="GET",
+                    endpoint="/android/version", verify_ssl=False
+                )
+            except Exception as e:
+                logger.error(f"Error making Genymotion API request: {e}")
+                time.sleep(5)
+                continue
+            
             if response.status_code == 200:
                 logger.info(f"Genymotion API is up for session {session_id}")
                 return
