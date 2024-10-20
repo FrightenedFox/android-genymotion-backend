@@ -496,7 +496,7 @@ class SessionModel(DynamoDBModel[Session]):
         Ends all sessions that have an active instance.
         """
         try:
-            sessions = self.get_all_items()
+            sessions = self.get_all_sessions_with_updated_info()
             active_sessions = [
                 session for session in sessions if session.instance and session.instance.instance_state == "running"
             ]

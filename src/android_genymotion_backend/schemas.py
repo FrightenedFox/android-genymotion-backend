@@ -12,8 +12,8 @@ class InstanceInfo(BaseModel):
 
 class CompleteInstanceInfo(InstanceInfo):
     instance_state: str
-    instance_ip: str
-    instance_aws_address: str
+    instance_ip: Optional[str]
+    instance_aws_address: Optional[str]
 
 
 class Session(BaseModel):
