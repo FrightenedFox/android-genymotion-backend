@@ -120,16 +120,22 @@ class ApplicationManager:
     #     logger.info("Screen recording stopped.")
 
     def _start_screen_recording(self, address: str, instance_id: str, game_id: str, video_id: str):
-        script = f"""
-        STOP_RECORDING=false
-        mkdir -p /sdcard/recordings
-        counter=1
-        while [ "$STOP_RECORDING" != "true" ]; do
-            screenrecord --time-limit 180 "/sdcard/recordings/recording_{game_id}_{video_id}_part${{counter}}.mp4"
-            counter=$((counter + 1))
-        done
         """
-        execute_shell_command(address, instance_id, f"nohup sh -c '{script}' &", logger)
+        Starts long-duration screen recording by chaining multiple screenrecord commands.
+        """
+        script = f"""
+            STOP_RECORDING=false;
+            mkdir -p /sdcard/recordings;
+            counter=1;
+            while [ "$STOP_RECORDING" != "true" ]; do
+                screenrecord --time-limit 180 "/sdcard/recordings/recording_{game_id}_{video_id}_part${{counter}}.mp4";
+                counter=$((counter + 1));
+            done
+            """
+
+        full_command = f"nohup sh -c '{script}' >/dev/null 2>&1 &"
+
+        execute_shell_command(address, instance_id, full_command)
         logger.info("Long-duration screen recording started.")
 
     def _stop_screen_recording(self, address: str, instance_id: str):
