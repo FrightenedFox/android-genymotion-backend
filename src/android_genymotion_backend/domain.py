@@ -369,7 +369,7 @@ class SessionModel(DynamoDBModel[Session]):
 
     def get_session_by_id(self, session_id: str) -> Optional[SessionWithPing]:
         try:
-            session = self.get_item_by_id(session_id)
+            session = SessionWithPing(**self.get_item_by_id(session_id).model_dump())
             session.instance = InstanceModel().get_instance_info(session.instance.instance_id)
             session_ping = self.session_ping_model.get_item_by_id(session_id)
             if session_ping:
@@ -518,6 +518,7 @@ class SessionModel(DynamoDBModel[Session]):
 
     def get_inactive_sessions(self, inactivity_minutes: int = 15) -> List[SessionWithPing]:
         session_pings = self.session_ping_model.get_inactive_session_pings(inactivity_minutes)
+        logger.info(f"Found {len(session_pings)} inactive session pings: {session_pings}")
         return [self.get_session_by_id(ping.SK) for ping in session_pings]
 
     def delete_dns_record(self, session_id: str, instance_ip: str) -> None:
