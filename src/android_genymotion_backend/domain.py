@@ -8,12 +8,10 @@ from typing import Any, Dict, Generic, List, Optional, TypeVar, Literal
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import BotoCoreError, ClientError
-from fastapi import BackgroundTasks
 from fastapi.encoders import jsonable_encoder
 from ksuid import ksuid
 
-from android_genymotion_backend.schemas import CompleteInstanceInfo, SessionPing
-from schemas import Game, InstanceInfo, Session, Video, AMI
+from schemas import Game, InstanceInfo, Session, Video, AMI, CompleteInstanceInfo, SessionPing
 from utils import custom_requests
 
 # Configure logging
