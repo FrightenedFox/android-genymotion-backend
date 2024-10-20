@@ -4,6 +4,7 @@ from typing import List
 from fastapi import FastAPI, HTTPException
 from mangum import Mangum
 
+from android_genymotion_backend.schemas import SessionPing
 from application_manager import ApplicationManager
 from domain import GameModel, SessionModel, VideoModel, AMIModel, VcpuLimitExceededException
 from schemas import (
@@ -126,6 +127,22 @@ def get_session(session_id: str) -> Session:
         item = session_model.get_session_by_id(session_id)
         if item:
             session_model.session_ping_model.update_last_accessed(session_id)
+            return item
+        else:
+            raise HTTPException(status_code=404, detail="Session not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/sessions/{session_id}/ping", response_model=SessionPing)
+def get_session(session_id: str) -> SessionPing:
+    """
+    Get the session ping by its ID.
+    """
+    try:
+        item = session_model.session_ping_model.get_item_by_id(session_id)
+        if item:
+            session_model.session_ping_model.update_last_accessed(session_id, instance_active=item.instance_active)
             return item
         else:
             raise HTTPException(status_code=404, detail="Session not found")
