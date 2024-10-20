@@ -5,11 +5,10 @@ from typing import List, Optional
 import boto3
 import requests
 from ksuid import ksuid
-from requests import Response
 
 
 from domain import SessionModel, GameModel, VideoModel, logger
-from utils import genymotion_request
+from utils import genymotion_request, execute_shell_command
 
 
 class ApplicationManager:
@@ -33,24 +32,6 @@ class ApplicationManager:
             return None, instance_id
 
         return address, instance_id
-
-    def _execute_shell_command(self, address: str, instance_id: str, command: str) -> Response:
-        """
-        Executes a shell command on the device via the Genymotion API.
-
-        Args:
-            address (str): The secure address.
-            instance_id (str): The instance ID.
-            command (str): The shell command to execute.
-        """
-        endpoint = "/android/shell"
-        data = {"commands": [command], "timeout_in_seconds": 10}
-
-        logger.info(f"Executing shell command on {address}: {command}")
-        response = genymotion_request(
-            address=address, instance_id=instance_id, method="POST", endpoint=endpoint, data=data, verify_ssl=True
-        )
-        return response
 
     def _set_screen_orientation(self, address: str, instance_id: str, orientation: str):
         """
@@ -84,7 +65,7 @@ class ApplicationManager:
         else:
             command = "settings put secure show_ime_with_hard_keyboard 0"
 
-        self._execute_shell_command(address, instance_id, command)
+        execute_shell_command(address, instance_id, command, logger)
         logger.info(f"Virtual keyboard {'enabled' if enabled else 'disabled'} on {address}")
 
     def _launch_application(self, address: str, instance_id: str, package_name: str):
@@ -97,7 +78,7 @@ class ApplicationManager:
             package_name (str): The package name of the application.
         """
         command = f"monkey -p {package_name} -c android.intent.category.LAUNCHER 1"
-        self._execute_shell_command(address, instance_id, command)
+        execute_shell_command(address, instance_id, command, logger)
         logger.info(f"Application {package_name} launched on {address}")
 
     def _stop_all_applications(self, address: str, instance_id: str):
@@ -109,39 +90,60 @@ class ApplicationManager:
             instance_id (str): The instance ID.
         """
         command = "pm list packages -3 | cut -f 2 -d ':' | while read line; do am force-stop $line; done"
-        self._execute_shell_command(address, instance_id, command)
+        execute_shell_command(address, instance_id, command, logger)
         logger.info(f"All applications stopped on {address}")
 
-    def _start_screen_recording(self, address: str, instance_id: str, game_id: str, video_id: str):
-        """
-        Starts screen recording.
-        """
-        recording_file_path = f"/sdcard/recordings/recording_{game_id}_{video_id}.mp4"
-        create_dir_command = f"mkdir -p /sdcard/recordings"
-        self._execute_shell_command(address, instance_id, create_dir_command)
+    # def _start_screen_recording(self, address: str, instance_id: str, game_id: str, video_id: str):
+    #     """
+    #     Starts screen recording.
+    #     """
+    #     recording_file_path = f"/sdcard/recordings/recording_{game_id}_{video_id}.mp4"
+    #     create_dir_command = f"mkdir -p /sdcard/recordings"
+    #     self._execute_shell_command(address, instance_id, create_dir_command, logger)
+    #
+    #     # Set recording timeout to 900 seconds (15 minutes)
+    #     command = f"screenrecord --time-limit 900 {recording_file_path}"
+    #     self._execute_shell_command(address, instance_id, f"{command} &", logger)
+    #     logger.info(f"Screen recording started, saving to {recording_file_path}")
+    #
+    #
+    # def _stop_screen_recording(self, address: str, instance_id: str):
+    #     """
+    #     Stops screen recording on the device.
+    #
+    #     Args:
+    #         address (str): The secure address.
+    #         instance_id (str): The instance ID.
+    #     """
+    #     shell_command = "pkill -INT screenrecord"
+    #     self._execute_shell_command(address, instance_id, shell_command, logger)
+    #     logger.info("Screen recording stopped.")
 
-        # Set recording timeout to 900 seconds (15 minutes)
-        command = f"screenrecord --time-limit 900 {recording_file_path}"
-        self._execute_shell_command(address, instance_id, f"{command} &")
-        logger.info(f"Screen recording started, saving to {recording_file_path}")
+    def _start_screen_recording(self, address: str, instance_id: str, game_id: str, video_id: str):
+        script = """
+        STOP_RECORDING=false
+        mkdir -p /sdcard/recordings
+        counter=1
+        while [ "$STOP_RECORDING" != "true" ]; do
+            screenrecord --time-limit 180 "/sdcard/recordings/recording_{game_id}_{video_id}_part${counter}.mp4"
+            counter=$((counter + 1))
+        done
+        """
+        execute_shell_command(address, instance_id, f"nohup sh -c '{script}' &", logger)
+        logger.info("Long-duration screen recording started.")
 
     def _stop_screen_recording(self, address: str, instance_id: str):
-        """
-        Stops screen recording on the device.
-
-        Args:
-            address (str): The secure address.
-            instance_id (str): The instance ID.
-        """
-        shell_command = "pkill -INT screenrecord"
-        self._execute_shell_command(address, instance_id, shell_command)
+        # Set the STOP_RECORDING flag
+        execute_shell_command(address, instance_id, "export STOP_RECORDING=true", logger)
+        execute_shell_command(address, instance_id, "pkill -INT screenrecord", logger)
+        logger.info("Screen recording stopped.")
 
     def _list_recording_files(self, address: str, instance_id: str) -> List[str]:
         """
         Lists all recording files on the device.
         """
         command = "ls /sdcard/recordings/"
-        result = self._execute_shell_command(address, instance_id, command)
+        result = execute_shell_command(address, instance_id, command, logger)
         logger.info(f"Listing recording files on {address}")
         filenames = result.text.strip().split("\n")
         file_list = [
@@ -228,11 +230,11 @@ class ApplicationManager:
         )
 
         command = f"su -c 'svc data enable'" if enabled else f"su -c 'svc data disable'"
-        self._execute_shell_command(address, instance_id, command)
+        execute_shell_command(address, instance_id, command, logger)
         print("Still working")
 
         command = f"su -c 'svc wifi enable'" if enabled else f"su -c 'svc wifi disable'"
-        self._execute_shell_command(address, instance_id, command)
+        execute_shell_command(address, instance_id, command, logger)
         print("Still working")
 
         # Disable root access

@@ -32,16 +32,25 @@ def handler(event, context):
             instance_info = session_model.instance_model.get_instance_info(instance_id)
 
             # Cleanup the session
-            app_manager.cleanup_session(session_id)
+            try:
+                app_manager.cleanup_session(session_id)
+            except Exception as e:
+                logger.error(f"Error cleaning up session {session_id}: {e}")
 
             # Upload all recordings to S3
-            app_manager.upload_all_recordings_to_s3(session_id)
+            try:
+                app_manager.upload_all_recordings_to_s3(session_id)
+            except Exception as e:
+                logger.error(f"Error uploading recordings for session {session_id}: {e}")
 
-            # Terminate the EC2 instance
-            session_model.instance_model.terminate_instance(instance_id)
+            try:
+                # Terminate the EC2 instance
+                session_model.instance_model.terminate_instance(instance_id)
 
-            # Update instance_active to False
-            session_model.session_ping_model.update_instance_active(session_id, False)
+                # Update instance_active to False
+                session_model.session_ping_model.update_instance_active(session_id, False)
+            except Exception as e:
+                logger.error(f"Error terminating instance {instance_id}: {e}")
 
             # Delete DNS record
             if instance_info:

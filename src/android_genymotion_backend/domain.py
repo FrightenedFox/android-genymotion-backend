@@ -12,7 +12,7 @@ from fastapi.encoders import jsonable_encoder
 from ksuid import ksuid
 
 from schemas import Game, InstanceInfo, Session, Video, AMI, CompleteInstanceInfo, SessionPing, SessionWithPing
-from utils import custom_requests
+from utils import custom_requests, execute_shell_command
 
 # Configure logging
 logger = logging.getLogger()
@@ -452,6 +452,20 @@ class SessionModel(DynamoDBModel[Session]):
             response = custom_requests(total_retries=9, backoff_factor=1.5, connect_timeout=5, read_timeout=15).post(
                 url, json=data, auth=auth, verify=False  # Since the certificate might not be valid yet
             )
+            if response.status_code == 404:
+                command = (
+                    "am startservice -a genymotionacme.generate -n com.genymobile.genymotionacme/.AcmeService.generate"
+                    f" --esal genymotionacme.generate.EXTRAS_DOMAIN_NAMES {self.domain_name(session_id)}"
+                )
+                logger.error(
+                    f"Failed to configure certificate normally: {response.status_code}, {response.text}. Retrying with"
+                    f" shell method, command: {command}..."
+                )
+                new_response = execute_shell_command(
+                    instance_info.instance_ip, instance_info.instance_id, command, logger, verify_ssl=False
+                )
+                logger.info(f"Shell command response: {new_response}")
+
             if str(response.status_code).startswith("2"):
                 logger.info(f"Certificate configured on instance {instance_info.instance_id}")
                 self.table.update_item(
@@ -463,7 +477,8 @@ class SessionModel(DynamoDBModel[Session]):
                     ExpressionAttributeValues={":ssl_configured": True},
                 )
             else:
-                logger.error(f"Failed to configure certificate: {response.status_code}, {response.text}")
+                logger.error(f"Failed to configure certificate: {response.status_code}, {response.text}. Retrying...")
+
         except Exception as e:
             logger.error(f"Error configuring instance certificate: {e}")
 
@@ -496,7 +511,7 @@ class SessionModel(DynamoDBModel[Session]):
             logger.error(f"Error enqueuing session termination task: {e}")
             raise
 
-    def end_all_running_sessions(self) -> None:
+    def end_all_running_sessions(self) -> List[SessionWithPing]:
         """
         Ends all sessions that have an active instance.
         """
@@ -511,7 +526,11 @@ class SessionModel(DynamoDBModel[Session]):
             for session in active_sessions:
                 self.end_session(session.SK)
 
-            logger.info("All active sessions have been scheduled for termination.")
+            logger.info(
+                f"{len(active_sessions)} active sessions have been scheduled for termination:"
+                f" {[s.SK for s in active_sessions]}"
+            )
+            return active_sessions
         except Exception as e:
             logger.error(f"Error ending all active sessions: {e}")
             raise

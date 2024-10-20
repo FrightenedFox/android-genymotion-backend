@@ -15,8 +15,6 @@ from schemas import (
     Video,
     AMI,
     CreateAMIRequest,
-    SessionPing,
-    SessionWithPing,
 )
 
 app = FastAPI()
@@ -82,8 +80,10 @@ def end_all_active_sessions() -> dict:
     End all sessions that have an active instance running.
     """
     try:
-        session_model.end_all_running_sessions()
-        return {"message": "All active sessions have been queued for termination."}
+        sessions = session_model.end_all_running_sessions()
+        return {
+            "message": f"{len(sessions)} active sessions have been queued for termination: {[s.SK for s in sessions]}"
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
