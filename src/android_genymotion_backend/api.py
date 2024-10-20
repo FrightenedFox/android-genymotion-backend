@@ -15,6 +15,8 @@ from schemas import (
     Video,
     AMI,
     CreateAMIRequest,
+    SessionWithPing,
+    SessionPing,
 )
 
 app = FastAPI()
