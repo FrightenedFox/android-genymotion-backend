@@ -35,6 +35,12 @@ class SessionPing(BaseModel):
     last_accessed_on: str
     scheduled_for_deletion: bool = False
 
+class SessionWithPing(Session, SessionPing):
+    PK: str = "SESSION"
+    instance_active: Optional[bool] = None
+    last_accessed_on: Optional[str] = None
+    scheduled_for_deletion: Optional[bool] = None
+
 
 # Schema for AMI entity
 class AMI(BaseModel):

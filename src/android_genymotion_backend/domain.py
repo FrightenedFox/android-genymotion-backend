@@ -11,7 +11,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from fastapi.encoders import jsonable_encoder
 from ksuid import ksuid
 
-from schemas import Game, InstanceInfo, Session, Video, AMI, CompleteInstanceInfo, SessionPing
+from schemas import Game, InstanceInfo, Session, Video, AMI, CompleteInstanceInfo, SessionPing, SessionWithPing
 from utils import custom_requests
 
 # Configure logging
@@ -367,10 +367,15 @@ class SessionModel(DynamoDBModel[Session]):
     def domain_name(session_id: str) -> str:
         return f"{session_id}.session.morskyi.org"
 
-    def get_session_by_id(self, session_id: str) -> Optional[Session]:
+    def get_session_by_id(self, session_id: str) -> Optional[SessionWithPing]:
         try:
             session = self.get_item_by_id(session_id)
             session.instance = InstanceModel().get_instance_info(session.instance.instance_id)
+            session_ping = self.session_ping_model.get_item_by_id(session_id)
+            if session_ping:
+                session.instance_active = session_ping.instance_active
+                session.last_accessed_on = session_ping.last_accessed_on
+                session.scheduled_for_deletion = session_ping.scheduled_for_deletion
             return session
         except Exception as e:
             logger.error(f"Error retrieving session with ID {session_id}: {e}")
@@ -511,7 +516,7 @@ class SessionModel(DynamoDBModel[Session]):
             logger.error(f"Error ending all active sessions: {e}")
             raise
 
-    def get_inactive_sessions(self, inactivity_minutes: int = 15) -> List[Session]:
+    def get_inactive_sessions(self, inactivity_minutes: int = 15) -> List[SessionWithPing]:
         session_pings = self.session_ping_model.get_inactive_session_pings(inactivity_minutes)
         return [self.get_session_by_id(ping.SK) for ping in session_pings]
 

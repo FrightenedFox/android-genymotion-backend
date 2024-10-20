@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 from mangum import Mangum
 
 from application_manager import ApplicationManager
-from domain import GameModel, SessionModel, VideoModel, AMIModel, VcpuLimitExceededException, SessionPing
+from domain import GameModel, SessionModel, VideoModel, AMIModel, VcpuLimitExceededException
 from schemas import (
     CreateGameRequest,
     CreateSessionRequest,
@@ -15,6 +15,8 @@ from schemas import (
     Video,
     AMI,
     CreateAMIRequest,
+    SessionPing,
+    SessionWithPing,
 )
 
 app = FastAPI()
@@ -62,8 +64,8 @@ def create_session(request: CreateSessionRequest) -> Session:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/sessions/list-all-inactive", response_model=List[Session])
-def list_all_inactive_sessions() -> List[Session]:
+@app.get("/sessions/list-all-inactive", response_model=List[SessionWithPing])
+def list_all_inactive_sessions() -> List[SessionWithPing]:
     """
     Retrieve all sessions that are not active (i.e., the instance is not running).
     """
@@ -116,8 +118,8 @@ def create_session(year: int, request: CreateSessionRequest) -> Session:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/sessions/{session_id}", response_model=Session)
-def get_session(session_id: str) -> Session:
+@app.get("/sessions/{session_id}", response_model=SessionWithPing)
+def get_session(session_id: str) -> SessionWithPing:
     """
     Retrieve a session by its ID.
     """
