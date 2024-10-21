@@ -25,6 +25,11 @@ constructs = "^10.4.2"
 pre-commit = "^4.0.1"
 
 
+
+[tool.poetry.group.dashboard.dependencies]
+streamlit = "^1.39.0"
+streamlit-autorefresh = "^1.0.1"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
