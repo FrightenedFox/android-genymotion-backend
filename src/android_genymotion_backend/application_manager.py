@@ -158,6 +158,7 @@ class ApplicationManager:
 
         # Create the stop flag file
         execute_shell_command(address, instance_id, f"touch {control_file}", logger=logger)
+        execute_shell_command(address, instance_id, "pkill -INT screenrecord", logger=logger)
         logger.info("Screen recording stop signal sent.")
 
     def _list_recording_files(self, address: str, instance_id: str) -> List[str]:
@@ -258,7 +259,7 @@ class ApplicationManager:
                 endpoint=endpoint,
                 data={"value": 3},
                 logger=logger,
-                timeout=5,
+                timeout=7,
             )
         except Exception as e:
             logger.error(f"Error setting root access for session {session_id}: {e}")
@@ -267,11 +268,9 @@ class ApplicationManager:
 
         command = f"su -c 'svc data enable'" if enabled else f"su -c 'svc data disable'"
         execute_shell_command(address, instance_id, command, logger)
-        print("Still working")
 
         command = f"su -c 'svc wifi enable'" if enabled else f"su -c 'svc wifi disable'"
         execute_shell_command(address, instance_id, command, logger)
-        print("Still working")
 
         # Disable root access
         try:
@@ -282,7 +281,7 @@ class ApplicationManager:
                 endpoint=endpoint,
                 data={"value": 0},
                 logger=logger,
-                timeout=5,
+                timeout=7,
             )
         except Exception as e:
             logger.error(f"Error setting internet access for session {session_id}: {e}")
