@@ -4,11 +4,8 @@ from typing import Optional, Dict, Any, Union, Tuple
 import requests
 from requests import Response
 from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-
-import requests
 from requests.auth import HTTPBasicAuth
-
+from urllib3.util.retry import Retry
 
 
 def genymotion_request(
@@ -139,7 +136,8 @@ def execute_shell_command(
     instance_id: str,
     commands: str | list[str],
     logger: Optional[logging.Logger] = None,
-verify_ssl: bool = True,
+    verify_ssl: bool = True,
+    timeout: Optional[Union[float, Tuple[float, float]]] = None,
 ) -> Response:
     """
     Executes a shell command on the device via the Genymotion API.
@@ -150,6 +148,7 @@ verify_ssl: bool = True,
         commands (str or list[str]): The shell command(s) to execute.
         logger (Optional[logging.Logger]): Logger object.
         verify_ssl (bool): Whether to verify SSL certificates.
+        t
     """
     endpoint = "/android/shell"
     data = {"commands": commands if isinstance(commands, list) else [commands], "timeout_in_seconds": 10}
@@ -157,6 +156,13 @@ verify_ssl: bool = True,
     if logger:
         logger.info(f"Executing shell command on {address}: {commands}")
     response = genymotion_request(
-        address=address, instance_id=instance_id, method="POST", endpoint=endpoint, data=data, verify_ssl=verify_ssl, logger=logger
+        address=address,
+        instance_id=instance_id,
+        method="POST",
+        endpoint=endpoint,
+        data=data,
+        verify_ssl=verify_ssl,
+        logger=logger,
+        timeout=timeout,
     )
     return response

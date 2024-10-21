@@ -1,11 +1,8 @@
-import logging
 import os
 from typing import List, Optional
 
 import boto3
-import requests
 from ksuid import ksuid
-
 
 from domain import SessionModel, GameModel, VideoModel, logger
 from utils import genymotion_request, execute_shell_command
@@ -46,17 +43,20 @@ class ApplicationManager:
         endpoint = "/sensors/orientation"
         data = {"angle": angle}
 
-        genymotion_request(
-            address=address,
-            instance_id=instance_id,
-            method="POST",
-            endpoint=endpoint,
-            data=data,
-            verify_ssl=True,
-            timeout=5,
-            logger=logger,
-        )
-        logger.info(f"Screen orientation set to {orientation} on {address}")
+        try:
+            genymotion_request(
+                address=address,
+                instance_id=instance_id,
+                method="POST",
+                endpoint=endpoint,
+                data=data,
+                verify_ssl=True,
+                timeout=5,
+                logger=logger,
+            )
+            logger.info(f"Screen orientation set to {orientation} on {address}")
+        except Exception as e:
+            logger.error(f"Error setting screen orientation to {orientation} on {address}: {e}")
 
     def _set_virtual_keyboard(self, address: str, instance_id: str, enabled: bool):
         """
@@ -72,8 +72,13 @@ class ApplicationManager:
         else:
             command = "settings put secure show_ime_with_hard_keyboard 0"
 
-        execute_shell_command(address, instance_id, command, logger)
-        logger.info(f"Virtual keyboard {'enabled' if enabled else 'disabled'} on {address}")
+        try:
+            execute_shell_command(address, instance_id, command, logger, timeout=5)
+        except Exception as e:
+            logger.error(f"Error setting virtual keyboard on {address}: {e}")
+            return
+        else:
+            logger.info(f"Virtual keyboard {'enabled' if enabled else 'disabled'} on {address}")
 
     def _launch_application(self, address: str, instance_id: str, package_name: str):
         """
@@ -97,34 +102,12 @@ class ApplicationManager:
             instance_id (str): The instance ID.
         """
         command = "pm list packages -3 | cut -f 2 -d ':' | while read line; do am force-stop $line; done"
-        execute_shell_command(address, instance_id, command, logger)
-        logger.info(f"All applications stopped on {address}")
-
-    # def _start_screen_recording(self, address: str, instance_id: str, game_id: str, video_id: str):
-    #     """
-    #     Starts screen recording.
-    #     """
-    #     recording_file_path = f"/sdcard/recordings/recording_{game_id}_{video_id}.mp4"
-    #     create_dir_command = f"mkdir -p /sdcard/recordings"
-    #     self._execute_shell_command(address, instance_id, create_dir_command, logger)
-    #
-    #     # Set recording timeout to 900 seconds (15 minutes)
-    #     command = f"screenrecord --time-limit 900 {recording_file_path}"
-    #     self._execute_shell_command(address, instance_id, f"{command} &", logger)
-    #     logger.info(f"Screen recording started, saving to {recording_file_path}")
-    #
-    #
-    # def _stop_screen_recording(self, address: str, instance_id: str):
-    #     """
-    #     Stops screen recording on the device.
-    #
-    #     Args:
-    #         address (str): The secure address.
-    #         instance_id (str): The instance ID.
-    #     """
-    #     shell_command = "pkill -INT screenrecord"
-    #     self._execute_shell_command(address, instance_id, shell_command, logger)
-    #     logger.info("Screen recording stopped.")
+        try:
+            execute_shell_command(address, instance_id, command, logger)
+        except Exception as e:
+            logger.error(f"Error stopping applications on {address}: {e}")
+        else:
+            logger.info(f"All applications stopped on {address}")
 
     def _start_screen_recording(self, address: str, instance_id: str, game_id: str, video_id: str):
         """
@@ -148,7 +131,7 @@ class ApplicationManager:
         # Combine the script into a single line and redirect all output to /dev/null
         full_command = f"nohup sh -c '{script}' >/dev/null 2>&1 &"
 
-        execute_shell_command(address, instance_id, full_command)
+        execute_shell_command(address, instance_id, full_command, logger=logger)
         logger.info("Long-duration screen recording started.")
 
     def _stop_screen_recording(self, address: str, instance_id: str):
@@ -159,7 +142,7 @@ class ApplicationManager:
         control_file = "/sdcard/recordings/stop_recording.flag"
 
         # Create the stop flag file
-        execute_shell_command(address, instance_id, f"touch {control_file}")
+        execute_shell_command(address, instance_id, f"touch {control_file}", logger=logger)
         logger.info("Screen recording stop signal sent.")
 
     def _list_recording_files(self, address: str, instance_id: str) -> List[str]:
@@ -167,7 +150,7 @@ class ApplicationManager:
         Lists all recording files on the device.
         """
         command = "ls /sdcard/recordings/"
-        result = execute_shell_command(address, instance_id, command, logger)
+        result = execute_shell_command(address, instance_id, command, logger=logger)
         logger.info(f"Listing recording files on {address}")
         filenames = result.text.strip().split("\n")
         file_list = [
@@ -225,23 +208,22 @@ class ApplicationManager:
         method = "POST" if enabled else "DELETE"
 
         try:
-            response = genymotion_request(
+            genymotion_request(
                 address=address,
                 instance_id=instance_id,
                 method=method,
                 endpoint=endpoint,
-                verify_ssl=True,  # SSL certificate should be valid
+                verify_ssl=True,
                 timeout=5,
                 logger=logger,
             )
             logger.info(f"Kiosk mode {'enabled' if enabled else 'disabled'} for session {session_id}")
-        except requests.HTTPError as e:
+        except Exception as e:
             logger.error(f"Error setting kiosk mode for session {session_id}: {e}")
-            raise
 
     def set_internet_access(self, session_id: str, enabled: bool) -> None:
         """
-        Enable or disable internet access (WiFi and cellular) on the instance.
+        Enable or disable internet access (Wi-Fi and cellular) on the instance.
 
         Args:
             session_id (str): The session ID.
@@ -253,15 +235,20 @@ class ApplicationManager:
 
         # Set root access to 3 (always allow)
         endpoint = "/configuration/properties/persist.sys.root_access"
-        genymotion_request(
-            address=address,
-            instance_id=instance_id,
-            method="POST",
-            endpoint=endpoint,
-            data={"value": 3},
-            logger=logger,
-            timeout=5,
-        )
+        try:
+            genymotion_request(
+                address=address,
+                instance_id=instance_id,
+                method="POST",
+                endpoint=endpoint,
+                data={"value": 3},
+                logger=logger,
+                timeout=5,
+            )
+        except Exception as e:
+            logger.error(f"Error setting root access for session {session_id}: {e}")
+        else:
+            logger.info(f"Root access set to 3 for session {session_id}")
 
         command = f"su -c 'svc data enable'" if enabled else f"su -c 'svc data disable'"
         execute_shell_command(address, instance_id, command, logger)
@@ -272,16 +259,20 @@ class ApplicationManager:
         print("Still working")
 
         # Disable root access
-        genymotion_request(
-            address=address,
-            instance_id=instance_id,
-            method="POST",
-            endpoint=endpoint,
-            data={"value": 0},
-            logger=logger,
-            timeout=5,
-        )
-        logger.info(f"Internet access {'enabled' if enabled else 'disabled'} for session {session_id}")
+        try:
+            genymotion_request(
+                address=address,
+                instance_id=instance_id,
+                method="POST",
+                endpoint=endpoint,
+                data={"value": 0},
+                logger=logger,
+                timeout=5,
+            )
+        except Exception as e:
+            logger.error(f"Error setting internet access for session {session_id}: {e}")
+        else:
+            logger.info(f"Internet access {'enabled' if enabled else 'disabled'} for session {session_id}")
 
     def cleanup_session(self, session_id: str) -> None:
         """
