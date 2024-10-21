@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any, Union, Tuple
 
 import requests
 from requests import Response
@@ -10,18 +10,20 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 
+
 def genymotion_request(
     address: str,
     instance_id: str,
     method: str,
     endpoint: str,
-    data=None,
-    params=None,
-    verify_ssl=True,
-    files=None,
-    stream=False,
+    data: Optional[Dict[str, Any]] = None,
+    params: Optional[Dict[str, Any]] = None,
+    verify_ssl: bool = True,
+    files: Optional[Dict[str, Any]] = None,
+    stream: bool = False,
+    timeout: Optional[Union[float, Tuple[float, float]]] = None,
     logger: Optional[logging.Logger] = None,
-):
+) -> requests.Response:
     """
     Makes an authenticated request to the Genymotion API.
 
@@ -30,15 +32,21 @@ def genymotion_request(
         instance_id (str): The EC2 instance ID (used as password).
         method (str): HTTP method ('GET', 'POST', 'PUT', 'DELETE').
         endpoint (str): API endpoint (e.g., '/android/shell').
-        data (dict): JSON data to send in the body of the request.
-        params (dict): Query parameters.
-        verify_ssl (bool): Whether to verify SSL certificates.
-        files: Files to send in the request.
-        stream (bool): Whether to stream the response.
-        logger (Optional[logging.Logger]): Logger object.
+        data (dict, optional): JSON data to send in the body of the request.
+        params (dict, optional): Query parameters.
+        verify_ssl (bool, optional): Whether to verify SSL certificates. Defaults to True.
+        files (dict, optional): Files to send in the request.
+        stream (bool, optional): Whether to stream the response. Defaults to False.
+        timeout (float or tuple, optional): How many seconds to wait for the server to send data
+            before giving up, as a float, or a tuple of two floats (connect timeout, read timeout).
+            Defaults to None (no timeout).
+        logger (logging.Logger, optional): Logger object.
 
     Returns:
-        Response object.
+        requests.Response: The response object.
+
+    Raises:
+        requests.exceptions.RequestException: If an error occurs during the request.
     """
     url = f"https://{address}/api/v1{endpoint}"
     auth = HTTPBasicAuth("genymotion", instance_id)  # Password is the instance ID
@@ -48,21 +56,31 @@ def genymotion_request(
         headers["Content-Type"] = "application/json"
 
     if logger:
-        logger.info(f"Making request to Genymotion API: {method} {url}")
-    response = requests.request(
-        method=method,
-        url=url,
-        auth=auth,
-        json=data,
-        params=params,
-        verify=verify_ssl,
-        files=files,
-        stream=stream,
-        headers=headers,
-    )
+        logger.info(f"Making request to Genymotion API: {method} {url} with timeout={timeout}")
 
-    response.raise_for_status()  # Raise an exception for HTTP errors
-    return response
+    try:
+        response = requests.request(
+            method=method,
+            url=url,
+            auth=auth,
+            json=data,
+            params=params,
+            verify=verify_ssl,
+            files=files,
+            stream=stream,
+            headers=headers,
+            timeout=timeout,
+        )
+        response.raise_for_status()  # Raise an exception for HTTP errors
+        return response
+    except requests.exceptions.Timeout:
+        if logger:
+            logger.error(f"Request to {url} timed out after {timeout} seconds.")
+        raise
+    except requests.exceptions.RequestException as e:
+        if logger:
+            logger.error(f"An error occurred during the request to {url}: {e}")
+        raise
 
 
 def custom_requests(
@@ -139,6 +157,6 @@ verify_ssl: bool = True,
     if logger:
         logger.info(f"Executing shell command on {address}: {commands}")
     response = genymotion_request(
-        address=address, instance_id=instance_id, method="POST", endpoint=endpoint, data=data, verify_ssl=verify_ssl
+        address=address, instance_id=instance_id, method="POST", endpoint=endpoint, data=data, verify_ssl=verify_ssl, logger=logger
     )
     return response

@@ -12,7 +12,7 @@ from fastapi.encoders import jsonable_encoder
 from ksuid import ksuid
 
 from schemas import Game, InstanceInfo, Session, Video, AMI, CompleteInstanceInfo, SessionPing, SessionWithPing
-from utils import custom_requests, execute_shell_command, genymotion_request
+from utils import execute_shell_command, genymotion_request
 
 # Configure logging
 logger = logging.getLogger()
@@ -460,14 +460,17 @@ class SessionModel(DynamoDBModel[Session]):
         while time.time() - start_time < timeout:
             try:
                 response = genymotion_request(
-                    address=instance_info.instance_ip, instance_id=instance_info.instance_id, method="GET",
-                    endpoint="/android/version", verify_ssl=False
+                    address=instance_info.instance_ip,
+                    instance_id=instance_info.instance_id,
+                    method="GET",
+                    endpoint="/android/version",
+                    verify_ssl=False,
                 )
             except Exception as e:
                 logger.error(f"Error making Genymotion API request: {e}")
                 time.sleep(5)
                 continue
-            
+
             if response.status_code == 200:
                 logger.info(f"Genymotion API is up for session {session_id}")
                 return
@@ -475,35 +478,38 @@ class SessionModel(DynamoDBModel[Session]):
                 time.sleep(5)
         logger.error(f"Genymotion API did not become available within timeout for session {session_id}")
 
-
     def configure_instance_certificate(self, session_id: str, instance_info: CompleteInstanceInfo) -> None:
-        try:
-            url = f"https://{instance_info.instance_ip}/api/v1/configuration/certificate"
-            data = [self.domain_name(session_id)]
-            auth = ("genymotion", instance_info.instance_id)
-            response = custom_requests(total_retries=9, backoff_factor=1.5, connect_timeout=5, read_timeout=15).post(
-                url, json=data, auth=auth, verify=False  # Since the certificate might not be valid yet
-            )
-            success = False
-            if response.status_code == 404:
-                commands = [
-                    'setprop persist.tls.acme.domains {"user_dns":"%s"}' % self.domain_name(session_id),
-                    "am startservice -a genymotionacme.generate -n com.genymobile.genymotionacme/.AcmeService",
-                ]
-                logger.error(
-                    f"Failed to configure certificate normally: {response.status_code}, {response.text}. Retrying with"
-                    f" shell method, command: {commands}..."
-                )
-                new_response = execute_shell_command(
-                    instance_info.instance_ip, instance_info.instance_id, commands, logger, verify_ssl=False
-                )
-                logger.info(f"Shell command response: {new_response.text}")
-                success = new_response.status_code == 200 or new_response.text.startswith("Starting service: Intent")
-                if success:
-                    import time
-                    time.sleep(15)  # Wait for the service to start
+        commands = [
+            'setprop persist.tls.acme.domains {"user_dns":"%s"}' % self.domain_name(session_id),
+            "am startservice -a genymotionacme.generate -n com.genymobile.genymotionacme/.AcmeService",
+        ]
 
-            if success or str(response.status_code).startswith("2"):
+        # For Android 9.0 and above, use a different command
+        try:
+            session = self.get_session_by_id(session_id)
+            if session:
+                ami_model = AMIModel()
+                ami_info = ami_model.get_ami_by_id(session.ami_id)
+                if float(ami_info.android_version) >= 9.0:
+                    commands = (
+                        "am startservice -a genymotionacme.generate -n com.genymobile.genymotionacme/.AcmeService"
+                        f" --esal genymotionacme.generate.EXTRAS_DOMAIN_NAMES {self.domain_name(session_id)}"
+                    )
+        except Exception as e:
+            logger.error(f"Error configuring instance certificate: {e}")
+
+        try:
+            response = execute_shell_command(
+                instance_info.instance_ip, instance_info.instance_id, commands, logger, verify_ssl=False
+            )
+            logger.info(f"Shell command response: {response.text}")
+
+            if response.status_code == 200 or response.text.startswith("Starting service: Intent"):
+                import time
+
+                # Wait for the certificate to be configured
+                time.sleep(10)
+
                 logger.info(f"Certificate configured on instance {instance_info.instance_id}")
                 self.table.update_item(
                     Key={
@@ -514,7 +520,7 @@ class SessionModel(DynamoDBModel[Session]):
                     ExpressionAttributeValues={":ssl_configured": True},
                 )
             else:
-                logger.error(f"Failed to configure certificate: {response.status_code}, {response.text}. Retrying...")
+                logger.error(f"Failed to configure certificate: {response.status_code}, {response.text}.")
 
         except Exception as e:
             logger.error(f"Error configuring instance certificate: {e}")

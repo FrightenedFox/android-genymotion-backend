@@ -47,7 +47,14 @@ class ApplicationManager:
         data = {"angle": angle}
 
         genymotion_request(
-            address=address, instance_id=instance_id, method="POST", endpoint=endpoint, data=data, verify_ssl=True
+            address=address,
+            instance_id=instance_id,
+            method="POST",
+            endpoint=endpoint,
+            data=data,
+            verify_ssl=True,
+            timeout=5,
+            logger=logger,
         )
         logger.info(f"Screen orientation set to {orientation} on {address}")
 
@@ -192,6 +199,7 @@ class ApplicationManager:
             params=params,
             verify_ssl=True,
             stream=True,
+            logger=logger,
         )
 
         with open(local_path, "wb") as f:
@@ -208,6 +216,7 @@ class ApplicationManager:
             session_id (str): The session ID.
             enabled (bool): True to enable, False to disable.
         """
+        logger.info(f"Setting kiosk mode {'enabled' if enabled else 'disabled'} for session {session_id}")
         address, instance_id = self._get_address_and_instance_id(session_id)
         if not address:
             return
@@ -222,6 +231,8 @@ class ApplicationManager:
                 method=method,
                 endpoint=endpoint,
                 verify_ssl=True,  # SSL certificate should be valid
+                timeout=5,
+                logger=logger,
             )
             logger.info(f"Kiosk mode {'enabled' if enabled else 'disabled'} for session {session_id}")
         except requests.HTTPError as e:
@@ -243,7 +254,13 @@ class ApplicationManager:
         # Set root access to 3 (always allow)
         endpoint = "/configuration/properties/persist.sys.root_access"
         genymotion_request(
-            address=address, instance_id=instance_id, method="POST", endpoint=endpoint, data={"value": 3}, logger=logger
+            address=address,
+            instance_id=instance_id,
+            method="POST",
+            endpoint=endpoint,
+            data={"value": 3},
+            logger=logger,
+            timeout=5,
         )
 
         command = f"su -c 'svc data enable'" if enabled else f"su -c 'svc data disable'"
@@ -256,7 +273,13 @@ class ApplicationManager:
 
         # Disable root access
         genymotion_request(
-            address=address, instance_id=instance_id, method="POST", endpoint=endpoint, data={"value": 0}, logger=logger
+            address=address,
+            instance_id=instance_id,
+            method="POST",
+            endpoint=endpoint,
+            data={"value": 0},
+            logger=logger,
+            timeout=5,
         )
         logger.info(f"Internet access {'enabled' if enabled else 'disabled'} for session {session_id}")
 
