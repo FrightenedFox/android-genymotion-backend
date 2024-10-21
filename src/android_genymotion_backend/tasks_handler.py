@@ -35,6 +35,9 @@ def handler(event, context):
             # Wait for Genymotion API to be available
             session_model.wait_for_genymotion_api(session_id)
 
+            # Wait for Genymotion instance to be ready
+            time.sleep(5)
+
             # Configure SSL certificate
             session_model.configure_instance_certificate(session_id, instance_info)
 

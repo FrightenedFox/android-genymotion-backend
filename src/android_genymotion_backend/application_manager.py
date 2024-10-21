@@ -80,7 +80,7 @@ class ApplicationManager:
         else:
             logger.info(f"Virtual keyboard {'enabled' if enabled else 'disabled'} on {address}")
 
-    def _launch_application(self, address: str, instance_id: str, package_name: str):
+    def _launch_application(self, address: str, instance_id: str, package_name: str, session_id: str):
         """
         Launches the application.
 
@@ -90,8 +90,23 @@ class ApplicationManager:
             package_name (str): The package name of the application.
         """
         command = f"monkey -p {package_name} -c android.intent.category.LAUNCHER 1"
-        execute_shell_command(address, instance_id, command, logger)
-        logger.info(f"Application {package_name} launched on {address}")
+        try:
+            execute_shell_command(address, instance_id, command, logger)
+        except Exception as e:
+            import time
+
+            logger.error(
+                f"Error launching application {package_name} on {address}: {e}. Retrying by reconfiguring SSL."
+            )
+            instance_info = self.session_model.instance_model.get_instance_info(instance_id)
+            self.session_model.configure_instance_certificate(session_id, instance_info)
+
+            time.sleep(7)
+
+            execute_shell_command(address, instance_id, command, logger)
+            logger.info(f"Application {package_name} launched on {address} after reconfiguring SSL.")
+        else:
+            logger.info(f"Application {package_name} launched on {address}")
 
     def _stop_all_applications(self, address: str, instance_id: str):
         """
@@ -330,7 +345,7 @@ class ApplicationManager:
             self.set_internet_access(session_id, game.wifi_enabled)
 
             # Launch the game application
-            self._launch_application(address, instance_id, game.android_package_name)
+            self._launch_application(address, instance_id, game.android_package_name, session_id)
 
             # Enable kiosk mode
             self.set_kiosk_mode(session_id, enabled=True)
