@@ -9,7 +9,7 @@ from aws_cdk import aws_logs as logs
 from aws_cdk import aws_sqs as sqs
 from constructs import Construct
 
-HOSTED_ZONE_ID = "Z02955531S24W8X23E32A"
+HOSTED_ZONE_ID = "Z102646118DNFDHJHTKZ0"
 S3_BUCKET_NAME = "android-project"
 
 class BackendStack(Stack):
