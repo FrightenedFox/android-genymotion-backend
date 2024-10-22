@@ -4,9 +4,30 @@ from datetime import datetime
 
 from application_manager import ApplicationManager
 from domain import SessionModel
+from schemas import Session
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+
+def update_session_status(session: Session, session_model: SessionModel):
+    # Update session's end_time and set scheduled_for_deletion to False
+    session_model.table.update_item(
+        Key={
+            session_model.partition_key_name: session_model.partition_key_value,
+            session_model.sort_key_name: session.session_id,
+        },
+        UpdateExpression="SET end_time = :end_time",
+        ExpressionAttributeValues={":end_time": datetime.now().isoformat()},
+    )
+    session_model.session_ping_model.table.update_item(
+        Key={
+            session_model.partition_key_name: session_model.session_ping_model.partition_key_value,
+            session_model.sort_key_name: session.session_id,
+        },
+        UpdateExpression="SET scheduled_for_deletion = :scheduled_for_deletion",
+        ExpressionAttributeValues={":scheduled_for_deletion": False},
+    )
 
 
 def handler(event, context):
@@ -23,13 +44,11 @@ def handler(event, context):
             app_manager = ApplicationManager()
 
             # Fetch the session
-            session = session_model.get_item_by_id(session_id)
+            session = session_model.get_session_by_id(session_id)
             if not session or not session.instance:
                 logger.error(f"Session {session_id} not found or has no instance.")
+                update_session_status(session, session_model)
                 continue
-
-            instance_id = session.instance.instance_id
-            instance_info = session_model.instance_model.get_instance_info(instance_id)
 
             # Cleanup the session
             try:
@@ -45,34 +64,19 @@ def handler(event, context):
 
             try:
                 # Terminate the EC2 instance
-                session_model.instance_model.terminate_instance(instance_id)
+                session_model.instance_model.terminate_instance(session.instance.instance_id)
 
                 # Update instance_active to False
                 session_model.session_ping_model.update_instance_active(session_id, False)
             except Exception as e:
-                logger.error(f"Error terminating instance {instance_id}: {e}")
+                logger.error(f"Error terminating instance {session.instance.instance_id}: {e}")
 
             # Delete DNS record
-            if instance_info:
-                session_model.delete_dns_record(session_id, instance_info.instance_ip)
+            if session.instance:
+                session_model.delete_dns_record(session_id, session.instance.instance_ip)
 
-            # Update session's end_time and set scheduled_for_deletion to False
-            session_model.table.update_item(
-                Key={
-                    session_model.partition_key_name: session_model.partition_key_value,
-                    session_model.sort_key_name: session_id,
-                },
-                UpdateExpression="SET end_time = :end_time",
-                ExpressionAttributeValues={":end_time": datetime.now().isoformat()},
-            )
-            session_model.session_ping_model.table.update_item(
-                Key={
-                    session_model.partition_key_name: session_model.session_ping_model.partition_key_value,
-                    session_model.sort_key_name: session_id,
-                },
-                UpdateExpression="SET scheduled_for_deletion = :scheduled_for_deletion",
-                ExpressionAttributeValues={":scheduled_for_deletion": False},
-            )
+            # Update session status
+            update_session_status(session, session_model)
 
             logger.info(f"Session {session_id} terminated successfully.")
 

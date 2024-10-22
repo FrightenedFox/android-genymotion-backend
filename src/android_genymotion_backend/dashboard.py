@@ -3,7 +3,7 @@ import time
 import boto3
 import pandas as pd
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
+# from streamlit_autorefresh import st_autorefresh
 
 from domain import SessionModel, GameModel, VideoModel, AMIModel
 
@@ -18,8 +18,8 @@ st.set_page_config(
 
 st.title("Android Genymotion Real-Time Dashboard")
 
-# Autorefresh every 30 seconds
-count = st_autorefresh(interval=30 * 1000, limit=None, key="dashboardrefresh")
+# # Autorefresh every 30 seconds
+# count = st_autorefresh(interval=30 * 1000, limit=None, key="dashboardrefresh")
 
 
 def display_additional_statistics():
