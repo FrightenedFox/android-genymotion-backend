@@ -4,7 +4,7 @@ from typing import List, Optional
 import boto3
 from ksuid import ksuid
 
-from domain import SessionModel, GameModel, VideoModel, logger
+from domain import SessionModel, GameModel, VideoModel, logger, AMIModel
 from utils import genymotion_request, execute_shell_command
 
 
@@ -186,30 +186,49 @@ class ApplicationManager:
         logger.info(f"Found {len(file_list)} recording files on {address}: \n{file_list}")
         return file_list
 
-    def _pull_file_from_device(self, address: str, instance_id: str, device_path: str, local_path: str):
+    def _pull_file_from_device(self, session_id: str, instance_id: str, device_path: str, local_path: str):
         """
         Pulls a file from the device to the local filesystem.
 
         Args:
-            address (str): The secure address.
+            session_id (str): The session ID.
             instance_id (str): The instance ID.
             device_path (str): The path to the file on the device.
             local_path (str): The local path where the file will be saved.
         """
         # Download the file using the Genymotion API
-        endpoint = "/files"
-        params = {"path": device_path}
 
-        response = genymotion_request(
-            address=address,
-            instance_id=instance_id,
-            method="GET",
-            endpoint=endpoint,
-            params=params,
-            verify_ssl=True,
-            stream=True,
-            logger=logger,
-        )
+        session = self.session_model.get_session_by_id(session_id)
+        if not session:
+            logger.error(f"Session {session_id} not found, unable to pull file from device.")
+            return
+
+        ami_model = AMIModel()
+        ami_info = ami_model.get_ami_by_id(session.ami_id)
+        if float(ami_info.android_version) >= 9.0:
+            endpoint = "/files"
+            params = {"path": device_path}
+            response = genymotion_request(
+                address=self.session_model.domain_name(session_id),
+                instance_id=instance_id,
+                method="GET",
+                endpoint=endpoint,
+                params=params,
+                verify_ssl=True,
+                stream=True,
+                logger=logger,
+            )
+        else:
+            endpoint = f"/files{device_path}"
+            response = genymotion_request(
+                address=self.session_model.domain_name(session_id),
+                instance_id=instance_id,
+                method="GET",
+                endpoint=endpoint,
+                verify_ssl=True,
+                stream=True,
+                logger=logger,
+            )
 
         with open(local_path, "wb") as f:
             for chunk in response.iter_content(chunk_size=8192):
@@ -408,7 +427,7 @@ class ApplicationManager:
 
                         # Pull file from device
                         local_path = f"/tmp/{video_id}.mp4"
-                        self._pull_file_from_device(address, instance_id, file_path, local_path)
+                        self._pull_file_from_device(session_id, instance_id, file_path, local_path)
 
                         # Upload to S3
                         s3 = boto3.client("s3")
