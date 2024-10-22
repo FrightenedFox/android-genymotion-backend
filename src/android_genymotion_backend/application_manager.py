@@ -15,6 +15,9 @@ class ApplicationManager:
         self.video_model = VideoModel()
         self.s3_bucket_name = os.environ.get("S3_BUCKET_NAME", "android-project")
 
+        # Path to the control file
+        self.recordings_control_file = "/sdcard/recordings/stop_recording.flag"
+
     def _get_address_and_instance_id(self, session_id: str) -> tuple[Optional[str], Optional[str]]:
         session = self.session_model.get_item_by_id(session_id)
         if not session or not session.instance:
@@ -128,19 +131,16 @@ class ApplicationManager:
         """
         Starts long-duration screen recording by chaining multiple screenrecord commands.
         """
-        # Create a control file path
-        control_file = "/sdcard/recordings/stop_recording.flag"
-
         # Properly format the shell script with semicolons and redirects
         script = f"""
-            touch {control_file};
+            touch {self.recordings_control_file};
             mkdir -p /sdcard/recordings;
             counter=1;
-            while [ ! -f {control_file} ]; do
+            while [ ! -f {self.recordings_control_file} ]; do
                 screenrecord --time-limit 180 "/sdcard/recordings/recording_{game_id}_{video_id}_part${{counter}}.mp4";
                 counter=$((counter + 1));
             done;
-            rm {control_file};
+            rm {self.recordings_control_file};
             """
 
         # Combine the script into a single line and redirect all output to /dev/null
@@ -153,13 +153,16 @@ class ApplicationManager:
         """
         Stops long-duration screen recording by creating a stop flag.
         """
-        # Path to the control file
-        control_file = "/sdcard/recordings/stop_recording.flag"
+        import time
 
         # Create the stop flag file
-        execute_shell_command(address, instance_id, f"touch {control_file}", logger=logger)
+        execute_shell_command(address, instance_id, f"touch {self.recordings_control_file}", logger=logger)
         execute_shell_command(address, instance_id, "pkill -INT screenrecord", logger=logger)
         logger.info("Screen recording stop signal sent.")
+
+        # Remove the stop flag file after 1 second
+        time.sleep(1)
+        execute_shell_command(address, instance_id, f"rm {self.recordings_control_file}", logger=logger)
 
     def _list_recording_files(self, address: str, instance_id: str) -> List[str]:
         """
