@@ -133,7 +133,6 @@ class ApplicationManager:
         """
         # Properly format the shell script with semicolons and redirects
         script = f"""
-            touch {self.recordings_control_file};
             mkdir -p /sdcard/recordings;
             counter=1;
             while [ ! -f {self.recordings_control_file} ]; do
@@ -177,6 +176,7 @@ class ApplicationManager:
             for filename in filenames
             if filename.startswith("recording_") and filename.endswith(".mp4")
         ]
+        logger.info(f"Found {len(file_list)} recording files on {address}: \n{file_list}")
         return file_list
 
     def _pull_file_from_device(self, address: str, instance_id: str, device_path: str, local_path: str):
