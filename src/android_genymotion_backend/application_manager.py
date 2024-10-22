@@ -16,7 +16,8 @@ class ApplicationManager:
         self.s3_bucket_name = os.environ.get("S3_BUCKET_NAME", "android-project")
 
         # Path to the control file
-        self.recordings_control_file = "/sdcard/recordings/stop_recording.flag"
+        self.recordings_device_dir = "/sdcard/recordings"
+        self.recordings_control_file = f"{self.recordings_device_dir}/stop_recording.flag"
 
     def _get_address_and_instance_id(self, session_id: str) -> tuple[Optional[str], Optional[str]]:
         session = self.session_model.get_item_by_id(session_id)
@@ -132,11 +133,17 @@ class ApplicationManager:
         Starts long-duration screen recording by chaining multiple screenrecord commands.
         """
         # Properly format the shell script with semicolons and redirects
+        recording_file = f"recording_{game_id}_{video_id}_part${{counter}}.mp4"
         script = f"""
-            mkdir -p /sdcard/recordings;
+            if [ ! -d {self.recordings_device_dir} ]; then
+                mkdir -p {self.recordings_device_dir};
+            elif [ -f {self.recordings_control_file} ]; then
+                rm {self.recordings_control_file};
+            fi;
+            
             counter=1;
             while [ ! -f {self.recordings_control_file} ]; do
-                screenrecord --time-limit 180 "/sdcard/recordings/recording_{game_id}_{video_id}_part${{counter}}.mp4";
+                screenrecord --time-limit 180 "{self.recordings_device_dir}/{recording_file}";
                 counter=$((counter + 1));
             done;
             rm {self.recordings_control_file};
