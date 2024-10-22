@@ -387,40 +387,44 @@ class ApplicationManager:
                 return
 
             for file_path in file_list:
-                filename = os.path.basename(file_path)
-                if filename.startswith("recording_") and filename.endswith(".mp4"):
-                    parts = filename[len("recording_") : -len(".mp4")].split("_")
-                    if len(parts) == 3:
-                        game_id, video_id, part_name = parts
-                    else:
-                        logger.warning(f"Unexpected recording file name format: {filename}")
-                        continue
+                try:
+                    filename = os.path.basename(file_path)
+                    if filename.startswith("recording_") and filename.endswith(".mp4"):
+                        parts = filename[len("recording_") : -len(".mp4")].split("_")
+                        if len(parts) == 3:
+                            game_id, video_id, part_name = parts
+                        else:
+                            logger.warning(f"Unexpected recording file name format: {filename}")
+                            continue
 
-                    video_id = f"{video_id}_{part_name}"
+                        video_id = f"{video_id}_{part_name}"
 
-                    # Create Video entry
-                    video = self.video_model.create_video(
-                        video_id=video_id,
-                        session_id=session_id,
-                        game_id=game_id,
-                    )
+                        # Create Video entry
+                        video = self.video_model.create_video(
+                            video_id=video_id,
+                            session_id=session_id,
+                            game_id=game_id,
+                        )
 
-                    # Pull file from device
-                    local_path = f"/tmp/{video_id}.mp4"
-                    self._pull_file_from_device(address, instance_id, file_path, local_path)
+                        # Pull file from device
+                        local_path = f"/tmp/{video_id}.mp4"
+                        self._pull_file_from_device(address, instance_id, file_path, local_path)
 
-                    # Upload to S3
-                    s3 = boto3.client("s3")
-                    s3_key = f"recordings/{video_id}.mp4"
-                    s3.upload_file(local_path, self.s3_bucket_name, s3_key)
-                    logger.info(f"Uploaded recording {video_id} to S3 at {s3_key}")
+                        # Upload to S3
+                        s3 = boto3.client("s3")
+                        s3_key = f"recordings/{video_id}.mp4"
+                        s3.upload_file(local_path, self.s3_bucket_name, s3_key)
+                        logger.info(f"Uploaded recording {video_id} to S3 at {s3_key}")
 
-                    # Update Video entry with size
-                    size = os.path.getsize(local_path)
-                    self.video_model.update_video_size_and_duration(video_id, size=size)
+                        # Update Video entry with size
+                        size = os.path.getsize(local_path)
+                        self.video_model.update_video_size_and_duration(video_id, size=size)
 
-                    # Clean up
-                    os.remove(local_path)
+                        # Clean up
+                        os.remove(local_path)
+                except Exception as e:
+                    logger.error(f"Error processing recording file {file_path}: {e}")
+                    continue
 
             logger.info(f"All recordings uploaded for session {session_id}")
 
