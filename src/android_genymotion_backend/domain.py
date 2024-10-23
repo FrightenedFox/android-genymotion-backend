@@ -365,7 +365,7 @@ class SessionModel(DynamoDBModel[Session]):
 
     @staticmethod
     def domain_name(session_id: str) -> str:
-        return f"{session_id}.session.morskyi.net"
+        return f"{session_id}.session.krupina.me"
 
     def get_session_by_id(self, session_id: str) -> Optional[SessionWithPing]:
         try:
