@@ -143,7 +143,7 @@ class ApplicationManager:
             
             counter=1;
             while [ ! -f {self.recordings_control_file} ]; do
-                screenrecord --time-limit 180 "{self.recordings_device_dir}/{recording_file}";
+                screenrecord --bit-rate 8000000 --time-limit 180 "{self.recordings_device_dir}/{recording_file}";
                 counter=$((counter + 1));
             done;
             rm {self.recordings_control_file};
