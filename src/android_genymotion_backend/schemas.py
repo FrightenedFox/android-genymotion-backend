@@ -62,6 +62,8 @@ class Game(BaseModel):
     apk_s3_path: Optional[str] = None
     wifi_enabled: bool = True
     screen_orientation: Literal["horizontal", "vertical"] = "vertical"
+    GSI1PK: Optional[str]
+    GSI1SK: Optional[str]
 
 
 # Schema for Video entity
@@ -74,6 +76,10 @@ class Video(BaseModel):
     duration: Optional[int] = None  # Duration in seconds
     size: Optional[int] = None  # Size in bytes
     timestamp: str  # Store datetime as ISO-formatted string
+    GSI1PK: Optional[str]
+    GSI1SK: Optional[str]
+    GSI2PK: Optional[str]
+    GSI2SK: Optional[str]
 
 
 # Request schemas for API endpoints

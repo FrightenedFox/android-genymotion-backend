@@ -747,12 +747,10 @@ class GameModel(DynamoDBModel[Game]):
                 android_package_name=android_package_name,
                 wifi_enabled=wifi_enabled,
                 screen_orientation=screen_orientation,
+                GSI1PK=self.gsi1pk_value,
+                GSI1SK=ami_id,
             )
-            extra_attributes = {
-                self.gsi1pk_name: self.gsi1pk_value,
-                self.gsi1sk_name: ami_id,
-            }
-            self.create_item(game, extra_attributes=extra_attributes)
+            self.create_item(game)
             logger.info(f"Game {game_id} created: {name} v{version}")
             return game
         except Exception as e:
@@ -822,14 +820,12 @@ class VideoModel(DynamoDBModel[Video]):
                 duration=duration,
                 size=size,
                 timestamp=datetime.now().isoformat(),
+                GSI1PK=self.gsi1pk_value,
+                GSI1SK=session_id,
+                GSI2PK=self.gsi2pk_value,
+                GSI2SK=game_id,
             )
-            extra_attributes = {
-                self.gsi1pk_name: self.gsi1pk_value,
-                self.gsi1sk_name: session_id,
-                self.gsi2pk_name: self.gsi2pk_value,
-                self.gsi2sk_name: game_id,
-            }
-            self.create_item(video, extra_attributes=extra_attributes)
+            self.create_item(video)
             logger.info(f"Video {video_id} created for session {session_id} and game {game_id}")
             return video
         except Exception as e:
