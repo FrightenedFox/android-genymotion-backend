@@ -212,7 +212,7 @@ def display_running_sessions():
         df_sessions.sort_values(by="Start Time", ascending=False, inplace=True)
         st.subheader("Running Instances")
         st.write(f"Total Running Instances: {len(running_sessions)}")
-        st.dataframe(df_sessions, use_container_width=True, height=600)
+        st.dataframe(df_sessions, use_container_width=True)
     else:
         st.subheader("No Running Instances")
 
