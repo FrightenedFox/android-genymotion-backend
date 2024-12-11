@@ -4,8 +4,7 @@ from datetime import datetime, timedelta
 import boto3
 import pandas as pd
 import streamlit as st
-
-from domain import SessionModel, GameModel, VideoModel, AMIModel, SessionPingModel
+from domain import AMIModel, GameModel, SessionModel, SessionPingModel, VideoModel
 
 # Set up AWS clients
 s3_client = boto3.client("s3")
@@ -59,14 +58,10 @@ def display_additional_statistics():
     now = datetime.utcnow()
     last_24h = now - timedelta(hours=24)
 
-    sessions_last_24h = [
-        s for s in sessions if datetime.fromisoformat(s.start_time) > last_24h
-    ]
+    sessions_last_24h = [s for s in sessions if datetime.fromisoformat(s.start_time) > last_24h]
     total_sessions_last_24h = len(sessions_last_24h)
 
-    videos_last_24h = [
-        v for v in videos if datetime.fromisoformat(v.timestamp) > last_24h
-    ]
+    videos_last_24h = [v for v in videos if datetime.fromisoformat(v.timestamp) > last_24h]
     total_videos_last_24h = len(videos_last_24h)
 
     # Total unique user IPs
@@ -77,16 +72,10 @@ def display_additional_statistics():
     total_user_ips_last_24h = len(user_ips_last_24h)
 
     # Total running instances
-    running_instances = [
-        s for s in sessions if s.instance and s.instance.instance_state == "running"
-    ]
+    running_instances = [s for s in sessions if s.instance and s.instance.instance_state == "running"]
     total_running_instances = len(running_instances)
 
-    running_instances_last_24h = [
-        s
-        for s in sessions_last_24h
-        if s.instance and s.instance.instance_state == "running"
-    ]
+    running_instances_last_24h = [s for s in sessions_last_24h if s.instance and s.instance.instance_state == "running"]
     total_running_instances_last_24h = len(running_instances_last_24h)
 
     st.subheader("Database Statistics")
@@ -163,16 +152,10 @@ def display_additional_statistics():
             Granularity="DAILY",
             Metrics=["UnblendedCost"],
         )
-        total_cost = sum(
-            float(day["Total"]["UnblendedCost"]["Amount"])
-            for day in response["ResultsByTime"]
-        )
-        col8.metric(
-            label="Total AWS Cost (last 30 days)", value=f"${total_cost:.2f}"
-        )
+        total_cost = sum(float(day["Total"]["UnblendedCost"]["Amount"]) for day in response["ResultsByTime"])
+        col8.metric(label="Total AWS Cost (last 30 days)", value=f"${total_cost:.2f}")
     except Exception as e:
         col8.error(f"Error retrieving AWS billing info: {e}")
-
 
 
 def display_running_sessions():
@@ -199,9 +182,7 @@ def display_running_sessions():
                 "User IP": session.user_ip,
                 "Browser Info": session.browser_info,
                 "Start Time": session.start_time,
-                "Last Accessed": session_ping.last_accessed_on
-                if session_ping
-                else None,
+                "Last Accessed": session_ping.last_accessed_on if session_ping else None,
                 "Representing Year": str(ami_info.representing_year) if ami_info else None,
                 "Android Version": ami_info.android_version if ami_info else None,
             }
@@ -349,9 +330,7 @@ def display_video_downloads():
                     )
                     st.session_state.video_df.at[index, "Download Link"] = presigned_url
                 except Exception as e:
-                    st.error(
-                        f"Error generating presigned URL for video {row['Video ID']}: {e}"
-                    )
+                    st.error(f"Error generating presigned URL for video {row['Video ID']}: {e}")
         # Re-display the updated data editor
         st.rerun()
 

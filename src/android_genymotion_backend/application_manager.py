@@ -2,10 +2,9 @@ import os
 from typing import List, Optional
 
 import boto3
+from domain import AMIModel, GameModel, SessionModel, VideoModel, logger
 from ksuid import ksuid
-
-from domain import SessionModel, GameModel, VideoModel, logger, AMIModel
-from utils import genymotion_request, execute_shell_command
+from utils import execute_shell_command, genymotion_request
 
 
 class ApplicationManager:
@@ -140,7 +139,7 @@ class ApplicationManager:
             elif [ -f {self.recordings_control_file} ]; then
                 rm {self.recordings_control_file};
             fi;
-            
+
             counter=1;
             while [ ! -f {self.recordings_control_file} ]; do
                 screenrecord --bit-rate 8000000 --time-limit 180 "{self.recordings_device_dir}/{recording_file}";

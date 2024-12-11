@@ -1,8 +1,10 @@
 import logging
+
 from domain import SessionModel
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
 
 def handler(event, context):
     try:

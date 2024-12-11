@@ -1,4 +1,4 @@
-from typing import Optional, Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel
 
@@ -32,6 +32,7 @@ class SessionPing(BaseModel):
     instance_active: bool
     last_accessed_on: str
     scheduled_for_deletion: bool = False
+
 
 class SessionWithPing(Session, SessionPing):
     PK: str = "SESSION"

@@ -12,6 +12,7 @@ from constructs import Construct
 HOSTED_ZONE_ID = "Z02955531S24W8X23E32A"
 S3_BUCKET_NAME = "android-project"
 
+
 class BackendStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, stage_name: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)

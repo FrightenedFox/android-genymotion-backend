@@ -3,15 +3,14 @@ import logging
 import os
 import uuid
 from datetime import datetime, timedelta
-from typing import Any, Dict, Generic, List, Optional, TypeVar, Literal
+from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar
 
 import boto3
-from boto3.dynamodb.conditions import Key, Attr
+from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi.encoders import jsonable_encoder
 from ksuid import ksuid
-
-from schemas import Game, InstanceInfo, Session, Video, AMI, CompleteInstanceInfo, SessionPing, SessionWithPing
+from schemas import AMI, CompleteInstanceInfo, Game, InstanceInfo, Session, SessionPing, SessionWithPing, Video
 from utils import execute_shell_command, genymotion_request
 
 # Configure logging
@@ -289,17 +288,6 @@ class SessionPingModel(DynamoDBModel[SessionPing]):
             )
             logger.info(f"Updated last_accessed_on and {instance_active=} for SessionPing {session_id}")
 
-    def update_instance_active(self, session_id: str, instance_active: bool = True) -> None:
-        self.table.update_item(
-            Key={
-                self.partition_key_name: self.partition_key_value,
-                self.sort_key_name: session_id,
-            },
-            UpdateExpression="SET instance_active = :instance_active",
-            ExpressionAttributeValues={":instance_active": instance_active},
-        )
-        logger.info(f"Updated {instance_active=} for SessionPing {session_id}")
-
     def update_scheduled_for_deletion(self, session_id: str, scheduled_for_deletion: bool = True) -> None:
         self.table.update_item(
             Key={
@@ -429,15 +417,17 @@ class SessionModel(DynamoDBModel[Session]):
                 HostedZoneId=os.environ["HOSTED_ZONE_ID"],
                 ChangeBatch={
                     "Comment": f"Add record for {domain_name}",
-                    "Changes": [{
-                        "Action": "UPSERT",
-                        "ResourceRecordSet": {
-                            "Name": domain_name,
-                            "Type": "A",
-                            "TTL": 300,
-                            "ResourceRecords": [{"Value": instance_ip}],
-                        },
-                    }],
+                    "Changes": [
+                        {
+                            "Action": "UPSERT",
+                            "ResourceRecordSet": {
+                                "Name": domain_name,
+                                "Type": "A",
+                                "TTL": 300,
+                                "ResourceRecords": [{"Value": instance_ip}],
+                            },
+                        }
+                    ],
                 },
             )
             logger.info(f"DNS record created for {domain_name} pointing to {instance_ip}")
@@ -591,15 +581,17 @@ class SessionModel(DynamoDBModel[Session]):
                 HostedZoneId=os.environ["HOSTED_ZONE_ID"],
                 ChangeBatch={
                     "Comment": f"Delete record for {domain_name}",
-                    "Changes": [{
-                        "Action": "DELETE",
-                        "ResourceRecordSet": {
-                            "Name": domain_name,
-                            "Type": "A",
-                            "TTL": 300,
-                            "ResourceRecords": [{"Value": instance_ip}],
-                        },
-                    }],
+                    "Changes": [
+                        {
+                            "Action": "DELETE",
+                            "ResourceRecordSet": {
+                                "Name": domain_name,
+                                "Type": "A",
+                                "TTL": 300,
+                                "ResourceRecords": [{"Value": instance_ip}],
+                            },
+                        }
+                    ],
                 },
             )
             logger.info(f"DNS record deleted for {domain_name}")
@@ -608,7 +600,7 @@ class SessionModel(DynamoDBModel[Session]):
         except Exception as e:
             logger.error(f"Error deleting DNS record: {e}")
 
-    def get_all_sessions_with_updated_info(self, only_active: bool = False) -> List[Session]:
+    def get_all_sessions_with_updated_info(self, only_active: bool = False, update_db: bool = False) -> List[Session]:
         try:
             sessions = self.get_all_items()
             instance_ids = [session.instance.instance_id for session in sessions if session.instance]
@@ -622,6 +614,9 @@ class SessionModel(DynamoDBModel[Session]):
                     aws_instance_info = aws_instances_info.get(session.instance.instance_id, None)
                     session.instance = aws_instance_info
 
+                    if update_db and aws_instance_info is None:
+                        self.update_session_to_inactive(session.SK)
+
             # If only_active is True, filter out non-active sessions
             if only_active:
                 sessions = [
@@ -633,6 +628,31 @@ class SessionModel(DynamoDBModel[Session]):
         except Exception as e:
             logger.error(f"Error retrieving and updating sessions: {e}")
             raise
+
+    def update_session_to_inactive(self, session_id: str) -> None:
+        """Set the session to inactive and update the last accessed time."""
+        self.table.update_item(
+            Key={
+                self.partition_key_name: self.partition_key_value,
+                self.sort_key_name: session_id,
+            },
+            UpdateExpression="SET end_time = :end_time, instance = :instance",
+            ExpressionAttributeValues={
+                ":instance": None,
+                ":end_time": datetime.now().isoformat(),
+            },
+        )
+        self.session_ping_model.table.update_item(
+            Key={
+                self.partition_key_name: self.session_ping_model.partition_key_value,
+                self.sort_key_name: session_id,
+            },
+            UpdateExpression="SET scheduled_for_deletion = :scheduled_for_deletion, instance_active = :instance_active",
+            ExpressionAttributeValues={
+                ":scheduled_for_deletion": False,
+                ":instance_active": False,
+            },
+        )
 
 
 class AMIModel(DynamoDBModel[AMI]):

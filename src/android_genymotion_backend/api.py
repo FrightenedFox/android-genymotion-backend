@@ -1,22 +1,21 @@
 import random
 from typing import List
 
+from application_manager import ApplicationManager
+from domain import AMIModel, GameModel, SessionModel, VcpuLimitExceededException, VideoModel
 from fastapi import FastAPI, HTTPException
 from mangum import Mangum
-
-from application_manager import ApplicationManager
-from domain import GameModel, SessionModel, VideoModel, AMIModel, VcpuLimitExceededException
 from schemas import (
+    AMI,
+    CreateAMIRequest,
     CreateGameRequest,
     CreateSessionRequest,
     CreateVideoRequest,
     Game,
     Session,
-    Video,
-    AMI,
-    CreateAMIRequest,
-    SessionWithPing,
     SessionPing,
+    SessionWithPing,
+    Video,
 )
 
 app = FastAPI()
@@ -30,15 +29,16 @@ app_manager = ApplicationManager()
 
 
 @app.get("/sessions", response_model=List[Session])
-def get_all_sessions(only_active: bool = False) -> List[Session]:
+def get_all_sessions(only_active: bool = False, update_db: bool = False) -> List[Session]:
     """
     Retrieve all sessions, updating their instance states.
 
     Args:
         only_active (bool): If True, only return active sessions where the instance is running.
+        update_db (bool): If True, update the instance state in the database.
     """
     try:
-        sessions = session_model.get_all_sessions_with_updated_info(only_active=only_active)
+        sessions = session_model.get_all_sessions_with_updated_info(only_active=only_active, update_db=update_db)
         return sessions
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
