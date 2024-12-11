@@ -294,11 +294,13 @@ class ApplicationManager:
         else:
             logger.info(f"Root access set to 3 for session {session_id}")
 
-        command = f"su -c 'svc data enable'" if enabled else f"su -c 'svc data disable'"
-        execute_shell_command(address, instance_id, command, logger)
+        # Repeat the command 3 times to ensure it is executed
+        for i in range(3):
+            command = f"su -c 'svc data enable'" if enabled else f"su -c 'svc data disable'"
+            execute_shell_command(address, instance_id, command, logger)
 
-        command = f"su -c 'svc wifi enable'" if enabled else f"su -c 'svc wifi disable'"
-        execute_shell_command(address, instance_id, command, logger)
+            command = f"su -c 'svc wifi enable'" if enabled else f"su -c 'svc wifi disable'"
+            execute_shell_command(address, instance_id, command, logger)
 
         # Disable root access
         try:
