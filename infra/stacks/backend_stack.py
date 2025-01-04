@@ -1,4 +1,6 @@
-from aws_cdk import BundlingOptions, CfnOutput, Duration, Stack
+from typing import Any
+
+from aws_cdk import BundlingOptions, CfnOutput, Duration, Stack, Tags
 from aws_cdk import aws_apigateway as apigw
 from aws_cdk import aws_events as events
 from aws_cdk import aws_events_targets as targets
@@ -9,13 +11,19 @@ from aws_cdk import aws_logs as logs
 from aws_cdk import aws_sqs as sqs
 from constructs import Construct
 
+PROJECT_TAG_KEY = "ProjectName"
+PROJECT_TAG_VALUE = "Android-Genymotion"
+
 HOSTED_ZONE_ID = "Z02955531S24W8X23E32A"
 S3_BUCKET_NAME = "android-project"
 
 
-class BackendStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, stage_name: str, **kwargs) -> None:
+class BackendStack(Stack):  # type: ignore
+    def __init__(self, scope: Construct, construct_id: str, stage_name: str, **kwargs: Any) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        # Apply tag to the entire stack
+        Tags.of(self).add(PROJECT_TAG_KEY, PROJECT_TAG_VALUE)
 
         # Get account and region from the CDK context
         aws_account_id = self.account
@@ -26,8 +34,9 @@ class BackendStack(Stack):
             self,
             "TaskQueue",
             queue_name=f"SessionTasksQueue-{stage_name}",
-            visibility_timeout=Duration.seconds(900),  # Adjust as needed
+            visibility_timeout=Duration.seconds(900),
         )
+        Tags.of(task_queue).add(PROJECT_TAG_KEY, PROJECT_TAG_VALUE)
 
         # Define the main Lambda function with bundling
         backend_lambda = _lambda.Function(
@@ -53,8 +62,8 @@ class BackendStack(Stack):
             memory_size=512,
             architecture=_lambda.Architecture.X86_64,
         )
+        Tags.of(backend_lambda).add(PROJECT_TAG_KEY, PROJECT_TAG_VALUE)
 
-        # Add necessary IAM permissions to the main Lambda
         backend_lambda.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
@@ -92,8 +101,8 @@ class BackendStack(Stack):
             memory_size=512,
             architecture=_lambda.Architecture.X86_64,
         )
+        Tags.of(tasks_lambda).add(PROJECT_TAG_KEY, PROJECT_TAG_VALUE)
 
-        # Add necessary IAM permissions to the tasks Lambda
         tasks_lambda.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
@@ -107,8 +116,6 @@ class BackendStack(Stack):
                 resources=["*"],
             )
         )
-
-        # Add SQS event source to the tasks Lambda
         tasks_lambda.add_event_source(event_sources.SqsEventSource(task_queue))
 
         # Define the SQS queue for session termination
@@ -116,8 +123,9 @@ class BackendStack(Stack):
             self,
             "SessionTerminationQueue",
             queue_name=f"SessionTerminationQueue-{stage_name}",
-            visibility_timeout=Duration.seconds(900),  # Adjust as needed
+            visibility_timeout=Duration.seconds(900),
         )
+        Tags.of(termination_queue).add(PROJECT_TAG_KEY, PROJECT_TAG_VALUE)
 
         # Define the session termination Lambda function
         session_termination_lambda = _lambda.Function(
@@ -143,8 +151,8 @@ class BackendStack(Stack):
             memory_size=512,
             architecture=_lambda.Architecture.X86_64,
         )
+        Tags.of(session_termination_lambda).add(PROJECT_TAG_KEY, PROJECT_TAG_VALUE)
 
-        # Add necessary IAM permissions to the session termination Lambda
         session_termination_lambda.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
@@ -158,11 +166,9 @@ class BackendStack(Stack):
                 resources=["*"],
             )
         )
-
-        # Add SQS event source to the session termination Lambda
         session_termination_lambda.add_event_source(event_sources.SqsEventSource(termination_queue))
 
-        # Set environment variable for SESSION_TERMINATION_QUEUE_URL
+        # Add environment variable for SESSION_TERMINATION_QUEUE_URL
         backend_lambda.add_environment("SESSION_TERMINATION_QUEUE_URL", termination_queue.queue_url)
         tasks_lambda.add_environment("SESSION_TERMINATION_QUEUE_URL", termination_queue.queue_url)
         session_termination_lambda.add_environment("SESSION_TERMINATION_QUEUE_URL", termination_queue.queue_url)
@@ -195,6 +201,7 @@ class BackendStack(Stack):
             memory_size=256,
             architecture=_lambda.Architecture.X86_64,
         )
+        Tags.of(cleanup_lambda).add(PROJECT_TAG_KEY, PROJECT_TAG_VALUE)
 
         # Add necessary IAM permissions to the cleanup Lambda
         cleanup_lambda.add_to_role_policy(
@@ -217,10 +224,10 @@ class BackendStack(Stack):
             "InactiveSessionCleanupRule",
             schedule=events.Schedule.rate(Duration.minutes(1)),
         )
-
         rule.add_target(targets.LambdaFunction(cleanup_lambda))
+        Tags.of(rule).add(PROJECT_TAG_KEY, PROJECT_TAG_VALUE)
 
-        # Create an API Gateway REST API with API key required
+        # API Gateway
         api = apigw.RestApi(
             self,
             "BackendAPI",
@@ -233,6 +240,7 @@ class BackendStack(Stack):
             ),
             default_method_options=apigw.MethodOptions(api_key_required=True),
         )
+        Tags.of(api).add(PROJECT_TAG_KEY, PROJECT_TAG_VALUE)
 
         # Integrate Lambda with API Gateway
         integration = apigw.LambdaIntegration(backend_lambda)
@@ -273,6 +281,6 @@ class BackendStack(Stack):
         CfnOutput(
             self,
             "APIKeyValue",
-            value=key.key_id,
+            value="ApiKeyPlaceholder",
             description="The API Key for accessing the API",
         )
