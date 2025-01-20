@@ -11,7 +11,7 @@ def handler(event, context):
         session_model = SessionModel()
 
         # Retrieve inactive sessions
-        inactive_sessions = session_model.get_inactive_sessions(inactivity_minutes=15)
+        inactive_sessions = session_model.get_inactive_sessions()
 
         if not inactive_sessions:
             logger.info("No inactive sessions found.")

@@ -130,11 +130,11 @@ class DynamoDBModel(Generic[T]):
 
 
 class VcpuLimitExceededException(Exception):
-    def __init__(
-        self,
-        message="You have reached your EC2 vCPU limit. Unable to create more instances at this time. Please try again later or contact support.",
-    ):
-        self.message = message
+    def __init__(self):
+        self.message = (
+            "You have reached your EC2 vCPU limit. Unable to create more instances at this time. Please try again later"
+            " or contact support."
+        )
         super().__init__(self.message)
 
 
@@ -568,7 +568,7 @@ class SessionModel(DynamoDBModel[Session]):
             logger.error(f"Error ending all active sessions: {e}")
             raise
 
-    def get_inactive_sessions(self, inactivity_minutes: int = 15) -> List[SessionWithPing]:
+    def get_inactive_sessions(self, inactivity_minutes: int = 5) -> List[SessionWithPing]:
         session_pings = self.session_ping_model.get_inactive_session_pings(inactivity_minutes)
         logger.info(f"Found {len(session_pings)} inactive session pings: {session_pings}")
         return [self.get_session_by_id(ping.SK) for ping in session_pings]

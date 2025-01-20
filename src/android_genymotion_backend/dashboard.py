@@ -178,7 +178,9 @@ def display_running_sessions():
                 "Instance Type": session.instance.instance_type,
                 "Instance State": session.instance.instance_state,
                 "Instance IP": session.instance.instance_ip,
-                "Access URL": f"https://genymotion:{session.instance.instance_id}@{session_model.domain_name(session.SK)}/",
+                "Access URL": (
+                    f"https://genymotion:{session.instance.instance_id}@{session_model.domain_name(session.SK)}/"
+                ),
                 "User IP": session.user_ip,
                 "Browser Info": session.browser_info,
                 "Start Time": session.start_time,
