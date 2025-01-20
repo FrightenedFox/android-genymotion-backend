@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar, cast
 
 import boto3
@@ -371,9 +371,11 @@ class SessionModel(DynamoDBModel[Session]):
     def get_least_used_hosted_zone_name(self) -> str:
         """Retrieves the name of the least used hosted zone during the last week."""
         sessions = self.get_all_sessions_with_updated_info()
-        this_week = datetime.now() - timedelta(days=7)
+        this_week = datetime.now(tz=UTC) - timedelta(days=7)
         sessions_this_week_with_domain_name = [
-            s for s in sessions if datetime.fromisoformat(s.start_time) > this_week and s.domain_name is not None
+            s
+            for s in sessions
+            if datetime.fromisoformat(s.start_time).astimezone(UTC) > this_week and s.domain_name is not None
         ]
         domain_counts: dict[str, int] = {}
         for session in sessions_this_week_with_domain_name:

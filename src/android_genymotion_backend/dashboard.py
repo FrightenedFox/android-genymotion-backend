@@ -58,10 +58,10 @@ def display_additional_statistics() -> None:
     now = datetime.now(tz=UTC)
     this_week = now - timedelta(days=7)
 
-    sessions_this_week = [s for s in sessions if datetime.fromisoformat(s.start_time) > this_week]
+    sessions_this_week = [s for s in sessions if datetime.fromisoformat(s.start_time).astimezone(UTC) > this_week]
     total_sessions_this_week = len(sessions_this_week)
 
-    videos_this_week = [v for v in videos if datetime.fromisoformat(v.timestamp) > this_week]
+    videos_this_week = [v for v in videos if datetime.fromisoformat(v.timestamp).astimezone(UTC) > this_week]
     total_videos_this_week = len(videos_this_week)
 
     # Total unique user IPs
@@ -113,8 +113,8 @@ def display_additional_statistics() -> None:
     session_durations = []
     for s in sessions:
         if s.end_time:
-            start = datetime.fromisoformat(s.start_time)
-            end = datetime.fromisoformat(s.end_time)
+            start = datetime.fromisoformat(s.start_time).astimezone(UTC)
+            end = datetime.fromisoformat(s.end_time).astimezone(UTC)
             duration = (end - start).total_seconds()
             if duration > 60 * 60 * 12:
                 # Ignore sessions longer than 24 hours, that is a bug
@@ -127,7 +127,10 @@ def display_additional_statistics() -> None:
 
     average_session_duration_this_week = (
         sum(
-            (datetime.fromisoformat(s.end_time) - datetime.fromisoformat(s.start_time)).total_seconds()
+            (
+                datetime.fromisoformat(s.end_time).astimezone(UTC)
+                - datetime.fromisoformat(s.start_time).astimezone(UTC)
+            ).total_seconds()
             for s in sessions_this_week
             if s.end_time
         )
