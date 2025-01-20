@@ -19,6 +19,7 @@ class Session(BaseModel):
     SK: str  # Session ID (KSUID)
     instance: Optional[InstanceInfo | CompleteInstanceInfo]
     ami_id: str = "ami-0f608f5544f94803b"
+    domain_name: Optional[str] = None
     ssl_configured: bool = False
     user_ip: Optional[str] = None
     browser_info: Optional[str] = None
@@ -29,16 +30,16 @@ class Session(BaseModel):
 class SessionPing(BaseModel):
     PK: str = "SESSION#PING"  # Partition key
     SK: str  # Session ID (KSUID)
-    instance_active: bool
-    last_accessed_on: str
-    scheduled_for_deletion: bool = False
+    instance_active: bool | None
+    last_accessed_on: str | None
+    scheduled_for_deletion: bool | None = False
 
 
 class SessionWithPing(Session, SessionPing):
     PK: str = "SESSION"
-    instance_active: Optional[bool] = None
-    last_accessed_on: Optional[str] = None
-    scheduled_for_deletion: Optional[bool] = None
+    instance_active: bool | None = None
+    last_accessed_on: str | None = None
+    scheduled_for_deletion: bool | None = None
 
 
 # Schema for AMI entity

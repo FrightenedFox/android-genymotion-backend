@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional
+from typing import List
 
 import boto3
 from domain import AMIModel, GameModel, SessionModel, VideoModel, logger
@@ -18,22 +18,22 @@ class ApplicationManager:
         self.recordings_device_dir = "/sdcard/recordings"
         self.recordings_control_file = f"{self.recordings_device_dir}/stop_recording.flag"
 
-    def _get_address_and_instance_id(self, session_id: str) -> tuple[Optional[str], Optional[str]]:
+    def _get_address_and_instance_id(self, session_id: str) -> tuple[str, str] | None:
         session = self.session_model.get_item_by_id(session_id)
         if not session or not session.instance:
             logger.error(f"Session {session_id} not found or instance not available.")
-            return None, None
+            return None
 
-        address = self.session_model.domain_name(session.SK)
+        address = session.domain_name
         instance_id = session.instance.instance_id
 
         if not address:
             logger.error(f"Secure address for session {session_id} not found.")
-            return None, instance_id
+            return None
 
         return address, instance_id
 
-    def _set_screen_orientation(self, address: str, instance_id: str, orientation: str):
+    def _set_screen_orientation(self, address: str, instance_id: str, orientation: str) -> None:
         """
         Sets the screen orientation.
 
@@ -61,7 +61,7 @@ class ApplicationManager:
         except Exception as e:
             logger.error(f"Error setting screen orientation to {orientation} on {address}: {e}")
 
-    def _set_virtual_keyboard(self, address: str, instance_id: str, enabled: bool):
+    def _set_virtual_keyboard(self, address: str, instance_id: str, enabled: bool) -> None:
         """
         Enables or disables the virtual keyboard.
 
@@ -83,7 +83,7 @@ class ApplicationManager:
         else:
             logger.info(f"Virtual keyboard {'enabled' if enabled else 'disabled'} on {address}")
 
-    def _launch_application(self, address: str, instance_id: str, package_name: str, session_id: str):
+    def _launch_application(self, address: str, instance_id: str, package_name: str, session_id: str) -> None:
         """
         Launches the application.
 
@@ -111,7 +111,7 @@ class ApplicationManager:
         else:
             logger.info(f"Application {package_name} launched on {address}")
 
-    def _stop_all_applications(self, address: str, instance_id: str):
+    def _stop_all_applications(self, address: str, instance_id: str) -> None:
         """
         Stops all user applications.
 
@@ -127,7 +127,7 @@ class ApplicationManager:
         else:
             logger.info(f"All applications stopped on {address}")
 
-    def _start_screen_recording(self, address: str, instance_id: str, game_id: str, video_id: str):
+    def _start_screen_recording(self, address: str, instance_id: str, game_id: str, video_id: str) -> None:
         """
         Starts long-duration screen recording by chaining multiple screenrecord commands.
         """
@@ -154,7 +154,7 @@ class ApplicationManager:
         execute_shell_command(address, instance_id, full_command, logger=logger)
         logger.info("Long-duration screen recording started.")
 
-    def _stop_screen_recording(self, address: str, instance_id: str):
+    def _stop_screen_recording(self, address: str, instance_id: str) -> None:
         """
         Stops long-duration screen recording by creating a stop flag.
         """
@@ -185,7 +185,7 @@ class ApplicationManager:
         logger.info(f"Found {len(file_list)} recording files on {address}: \n{file_list}")
         return file_list
 
-    def _pull_file_from_device(self, session_id: str, instance_id: str, device_path: str, local_path: str):
+    def _pull_file_from_device(self, session_id: str, instance_id: str, device_path: str, local_path: str) -> None:
         """
         Pulls a file from the device to the local filesystem.
 
@@ -208,7 +208,7 @@ class ApplicationManager:
             endpoint = "/files"
             params = {"path": device_path}
             response = genymotion_request(
-                address=self.session_model.domain_name(session_id),
+                address=session.domain_name,
                 instance_id=instance_id,
                 method="GET",
                 endpoint=endpoint,
@@ -220,7 +220,7 @@ class ApplicationManager:
         else:
             endpoint = f"/files{device_path}"
             response = genymotion_request(
-                address=self.session_model.domain_name(session_id),
+                address=session.domain_name,
                 instance_id=instance_id,
                 method="GET",
                 endpoint=endpoint,
@@ -244,9 +244,10 @@ class ApplicationManager:
             enabled (bool): True to enable, False to disable.
         """
         logger.info(f"Setting kiosk mode {'enabled' if enabled else 'disabled'} for session {session_id}")
-        address, instance_id = self._get_address_and_instance_id(session_id)
-        if not address:
+        addr_ins_id = self._get_address_and_instance_id(session_id)
+        if not addr_ins_id:
             return
+        address, instance_id = addr_ins_id
 
         endpoint = "/configuration/kiosk"
         method = "POST" if enabled else "DELETE"
@@ -273,9 +274,10 @@ class ApplicationManager:
             session_id (str): The session ID.
             enabled (bool): True to enable, False to disable.
         """
-        address, instance_id = self._get_address_and_instance_id(session_id)
-        if not address:
+        addr_ins_id = self._get_address_and_instance_id(session_id)
+        if not addr_ins_id:
             return
+        address, instance_id = addr_ins_id
 
         # Set root access to 3 (always allow)
         endpoint = "/configuration/properties/persist.sys.root_access"
@@ -296,10 +298,10 @@ class ApplicationManager:
 
         # Repeat the command 3 times to ensure it is executed
         for i in range(3):
-            command = f"su -c 'svc data enable'" if enabled else f"su -c 'svc data disable'"
+            command = "su -c 'svc data enable'" if enabled else "su -c 'svc data disable'"
             execute_shell_command(address, instance_id, command, logger)
 
-            command = f"su -c 'svc wifi enable'" if enabled else f"su -c 'svc wifi disable'"
+            command = "su -c 'svc wifi enable'" if enabled else "su -c 'svc wifi disable'"
             execute_shell_command(address, instance_id, command, logger)
 
         # Disable root access
@@ -325,9 +327,10 @@ class ApplicationManager:
         Args:
             session_id (str): The session ID.
         """
-        address, instance_id = self._get_address_and_instance_id(session_id)
-        if not address:
+        addr_ins_id = self._get_address_and_instance_id(session_id)
+        if not addr_ins_id:
             return
+        address, instance_id = addr_ins_id
 
         try:
             # Stop screen recording (if any)
@@ -359,9 +362,10 @@ class ApplicationManager:
             logger.error(f"Game {game_id} not found.")
             return
 
-        address, instance_id = self._get_address_and_instance_id(session_id)
-        if not address:
+        addr_ins_id = self._get_address_and_instance_id(session_id)
+        if not addr_ins_id:
             return
+        address, instance_id = addr_ins_id
 
         try:
             # Set screen orientation
@@ -394,9 +398,10 @@ class ApplicationManager:
         """
         Uploads all recordings from the device to S3 and creates Video entries.
         """
-        address, instance_id = self._get_address_and_instance_id(session_id)
-        if not address:
+        addr_ins_id = self._get_address_and_instance_id(session_id)
+        if not addr_ins_id:
             return
+        address, instance_id = addr_ins_id
 
         try:
             # List all recording files
@@ -410,7 +415,7 @@ class ApplicationManager:
                 try:
                     filename = os.path.basename(file_path)
                     if filename.startswith("recording_") and filename.endswith(".mp4"):
-                        parts = filename[len("recording_") : -len(".mp4")].split("_")
+                        parts = filename[len("recording_") : -len(".mp4")].split("_")  # noqa: E203
                         if len(parts) == 3:
                             game_id, video_id, part_name = parts
                         else:
@@ -420,11 +425,12 @@ class ApplicationManager:
                         video_id = f"{video_id}_{part_name}"
 
                         # Create Video entry
-                        video = self.video_model.create_video(
+                        self.video_model.create_video(
                             video_id=video_id,
                             session_id=session_id,
                             game_id=game_id,
                         )
+                        logger.debug("Created Video entry for recording %s", video_id)
 
                         # Pull file from device
                         local_path = f"/tmp/{video_id}.mp4"
@@ -459,9 +465,10 @@ class ApplicationManager:
         Args:
             session_id (str): The session ID.
         """
-        address, instance_id = self._get_address_and_instance_id(session_id)
-        if not address:
+        addr_ins_id = self._get_address_and_instance_id(session_id)
+        if not addr_ins_id:
             return
+        address, instance_id = addr_ins_id
 
         try:
             # Stop screen recording

@@ -2,8 +2,8 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timedelta
-from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar
+from datetime import UTC, datetime, timedelta
+from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar, cast
 
 import boto3
 from boto3.dynamodb.conditions import Attr, Key
@@ -28,6 +28,16 @@ dynamodb = boto3.resource("dynamodb")
 
 # Define a TypeVar for the item type
 T = TypeVar("T")
+
+HOSTED_ZONES_REGISTRY = {
+    "morskyi.org": "Z02955531S24W8X23E32A",
+    "morskyi.net": "Z102646118DNFDHJHTKZ0",
+    # "morskyi.de": "",
+    # "morskyi.name": "",
+    "krupina.me": "Z0563685CZ0PK5RBVKP",
+    # "trip-search.de": "",
+    # "trip-search.uk": "Z06167982MV44FK0EJWE",
+}
 
 
 # Base class for DynamoDB interactions
@@ -79,7 +89,7 @@ class DynamoDBModel(Generic[T]):
             logger.error(f"Error retrieving item {item_id}: {e}")
             raise
 
-    def create_item(self, item_data: T, extra_attributes: Dict[str, Any] = None) -> T:
+    def create_item(self, item_data: T, extra_attributes: dict[str, Any] | None = None) -> T:
         try:
             serialized_item = self._serialize(item_data)
             if extra_attributes:
@@ -122,15 +132,15 @@ class DynamoDBModel(Generic[T]):
             logger.error(f"Error querying {gsi_name} with PK: {gsi_pk} and SK: {gsi_sk}: {e}")
             raise
 
-    def _serialize(self, item: T) -> Dict[str, Any]:
-        return jsonable_encoder(item)
+    def _serialize(self, item: T) -> dict[str, Any]:
+        return cast(dict[str, Any], jsonable_encoder(item))
 
-    def _deserialize(self, data: Dict[str, Any]) -> T:
+    def _deserialize(self, data: dict[str, Any]) -> T:
         raise NotImplementedError("Subclasses must implement _deserialize method.")
 
 
 class VcpuLimitExceededException(Exception):
-    def __init__(self):
+    def __init__(self) -> None:
         self.message = (
             "You have reached your EC2 vCPU limit. Unable to create more instances at this time. Please try again later"
             " or contact support."
@@ -215,7 +225,7 @@ class InstanceModel:
             # Split instance_ids into chunks to avoid exceeding API limits
             max_ids_per_request = 1000  # AWS limit per request
             for i in range(0, len(instance_ids), max_ids_per_request):
-                chunk = instance_ids[i : i + max_ids_per_request]
+                chunk = instance_ids[i : i + max_ids_per_request]  # noqa: E203
                 response = self.ec2.describe_instances(InstanceIds=chunk)
                 found_instance_ids = set()
                 for reservation in response["Reservations"]:
@@ -343,7 +353,7 @@ class SessionPingModel(DynamoDBModel[SessionPing]):
 class SessionModel(DynamoDBModel[Session]):
     partition_key_value: str = "SESSION"
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.session_ping_model = SessionPingModel()
         self.instance_model = InstanceModel()
@@ -352,31 +362,60 @@ class SessionModel(DynamoDBModel[Session]):
         return Session(**data)
 
     @staticmethod
-    def domain_name(session_id: str) -> str:
-        return f"{session_id}.session.morskyi.org"
+    def get_hosted_zone_name(domain_name: str) -> str:
+        domain_name_parts = domain_name.split(".")
+        if len(domain_name_parts) < 2:
+            raise ValueError(f"Invalid domain name: {domain_name}")
+        return ".".join(domain_name_parts[-2:])
+
+    def get_least_used_hosted_zone_name(self) -> str:
+        """Retrieves the name of the least used hosted zone during the last week."""
+        sessions = self.get_all_sessions_with_updated_info()
+        this_week = datetime.now(tz=UTC) - timedelta(days=7)
+        sessions_this_week_with_domain_name = [
+            s for s in sessions if datetime.fromisoformat(s.start_time) > this_week and s.domain_name is not None
+        ]
+        domain_counts: dict[str, int] = {}
+        for session in sessions_this_week_with_domain_name:
+            domain_name = self.get_hosted_zone_name(session.domain_name)
+            domain_counts[domain_name] = domain_counts.get(domain_name, 0) + 1
+        least_used_domain_name = min(domain_counts, key=domain_counts.get)  # type: ignore
+        logger.info("Returning least used domain name: %s", least_used_domain_name)
+        return least_used_domain_name
+
+    @staticmethod
+    def domain_name(session_id: str, hosted_zone_name: str) -> str:
+        return f"{session_id}.session.{hosted_zone_name}"
 
     def get_session_by_id(self, session_id: str) -> Optional[SessionWithPing]:
         try:
-            session = SessionWithPing(**self.get_item_by_id(session_id).model_dump())
-            session.instance = InstanceModel().get_instance_info(session.instance.instance_id)
+            session = self.get_item_by_id(session_id)
+            if not session:
+                logger.warning("Session %s not found.", session_id)
+                return None
+            session_with_ping = SessionWithPing(**session.model_dump())
+            session_with_ping.instance = InstanceModel().get_instance_info(session_with_ping.instance.instance_id)
             session_ping = self.session_ping_model.get_item_by_id(session_id)
             if session_ping:
-                session.instance_active = session_ping.instance_active
-                session.last_accessed_on = session_ping.last_accessed_on
-                session.scheduled_for_deletion = session_ping.scheduled_for_deletion
-            return session
+                session_with_ping.instance_active = session_ping.instance_active
+                session_with_ping.last_accessed_on = session_ping.last_accessed_on
+                session_with_ping.scheduled_for_deletion = session_ping.scheduled_for_deletion
+            return session_with_ping
         except Exception as e:
             logger.error(f"Error retrieving session with ID {session_id}: {e}")
+            return None
 
     def create_session(self, ami_id: str, user_ip: Optional[str], browser_info: Optional[str]) -> Session:
         try:
             instance_info = self.instance_model.create_instance(ami_id)
             session_id = ksuid().__str__()
+            domain_name = self.domain_name(session_id, self.get_least_used_hosted_zone_name())
             session = Session(
                 PK=self.partition_key_value,
                 SK=session_id,
                 instance=instance_info,
                 ami_id=ami_id,
+                domain_name=domain_name,
                 user_ip=user_ip,
                 browser_info=browser_info,
                 start_time=datetime.now().isoformat(),
@@ -410,18 +449,22 @@ class SessionModel(DynamoDBModel[Session]):
             raise
 
     def create_dns_record(self, session_id: str, instance_ip: str) -> None:
+        session = self.get_session_by_id(session_id)
+        if not session:
+            logger.error(f"Session {session_id} not found.")
+            return
+
         route53 = boto3.client("route53")
-        domain_name = self.domain_name(session_id)
         try:
             route53.change_resource_record_sets(
-                HostedZoneId=os.environ["HOSTED_ZONE_ID"],
+                HostedZoneId=HOSTED_ZONES_REGISTRY[self.get_hosted_zone_name(session.domain_name)],
                 ChangeBatch={
-                    "Comment": f"Add record for {domain_name}",
+                    "Comment": f"Add record for {session.domain_name}",
                     "Changes": [
                         {
                             "Action": "UPSERT",
                             "ResourceRecordSet": {
-                                "Name": domain_name,
+                                "Name": session.domain_name,
                                 "Type": "A",
                                 "TTL": 300,
                                 "ResourceRecords": [{"Value": instance_ip}],
@@ -430,7 +473,7 @@ class SessionModel(DynamoDBModel[Session]):
                     ],
                 },
             )
-            logger.info(f"DNS record created for {domain_name} pointing to {instance_ip}")
+            logger.info(f"DNS record created for {session.domain_name} pointing to {instance_ip}")
         except Exception as e:
             logger.error(f"Error creating DNS record: {e}")
 
@@ -469,22 +512,27 @@ class SessionModel(DynamoDBModel[Session]):
         logger.error(f"Genymotion API did not become available within timeout for session {session_id}")
 
     def configure_instance_certificate(self, session_id: str, instance_info: CompleteInstanceInfo) -> None:
-        commands = [
-            'setprop persist.tls.acme.domains {"user_dns":"%s"}' % self.domain_name(session_id),
+        session = self.get_session_by_id(session_id)
+        if not session:
+            logger.error(f"Session {session_id} not found.")
+            return
+
+        commands: str | list[str] = [
+            'setprop persist.tls.acme.domains {"user_dns":"%s"}' % session.domain_name,
             "am startservice -a genymotionacme.generate -n com.genymobile.genymotionacme/.AcmeService",
         ]
 
         # For Android 9.0 and above, use a different command
         try:
-            session = self.get_session_by_id(session_id)
-            if session:
-                ami_model = AMIModel()
-                ami_info = ami_model.get_ami_by_id(session.ami_id)
-                if float(ami_info.android_version) >= 9.0:
-                    commands = (
-                        "am startservice -a genymotionacme.generate -n com.genymobile.genymotionacme/.AcmeService"
-                        f" --esal genymotionacme.generate.EXTRAS_DOMAIN_NAMES {self.domain_name(session_id)}"
-                    )
+            ami_model = AMIModel()
+            ami_info = ami_model.get_ami_by_id(session.ami_id)
+            if not ami_info:
+                raise ValueError(f"AMI {session.ami_id} not found")
+            if float(ami_info.android_version) >= 9.0:
+                commands = (
+                    "am startservice -a genymotionacme.generate -n com.genymobile.genymotionacme/.AcmeService"
+                    f" --esal genymotionacme.generate.EXTRAS_DOMAIN_NAMES {session.domain_name}"
+                )
         except Exception as e:
             logger.error(f"Error configuring instance certificate: {e}")
 
@@ -574,18 +622,22 @@ class SessionModel(DynamoDBModel[Session]):
         return [self.get_session_by_id(ping.SK) for ping in session_pings]
 
     def delete_dns_record(self, session_id: str, instance_ip: str) -> None:
+        session = self.get_session_by_id(session_id)
+        if not session:
+            logger.error(f"Session {session_id} not found.")
+            return
+
         route53 = boto3.client("route53")
-        domain_name = self.domain_name(session_id)
         try:
             route53.change_resource_record_sets(
-                HostedZoneId=os.environ["HOSTED_ZONE_ID"],
+                HostedZoneId=HOSTED_ZONES_REGISTRY[self.get_hosted_zone_name(session.domain_name)],
                 ChangeBatch={
-                    "Comment": f"Delete record for {domain_name}",
+                    "Comment": f"Delete record for {session.domain_name}",
                     "Changes": [
                         {
                             "Action": "DELETE",
                             "ResourceRecordSet": {
-                                "Name": domain_name,
+                                "Name": session.domain_name,
                                 "Type": "A",
                                 "TTL": 300,
                                 "ResourceRecords": [{"Value": instance_ip}],
@@ -594,9 +646,9 @@ class SessionModel(DynamoDBModel[Session]):
                     ],
                 },
             )
-            logger.info(f"DNS record deleted for {domain_name}")
+            logger.info(f"DNS record deleted for {session.domain_name}")
         except route53.exceptions.InvalidChangeBatch:
-            logger.warning(f"DNS record for {domain_name} already deleted or does not exist")
+            logger.warning(f"DNS record for {session.domain_name} already deleted or does not exist")
         except Exception as e:
             logger.error(f"Error deleting DNS record: {e}")
 
@@ -728,7 +780,7 @@ class AMIModel(DynamoDBModel[AMI]):
                 logger.info(f"AMI {ami.SK} has {total_videos} videos.")
 
             # Find the AMI with the lowest video count
-            recommended_ami_id = min(ami_video_counts, key=ami_video_counts.get)
+            recommended_ami_id = min(ami_video_counts, key=ami_video_counts.get)  # type: ignore
             recommended_ami = self.get_ami_by_id(recommended_ami_id)
             logger.info(f"Recommended AMI is {recommended_ami_id} with {ami_video_counts[recommended_ami_id]} videos.")
 
@@ -799,7 +851,7 @@ class GameModel(DynamoDBModel[Game]):
                 logger.info(f"Game {game.SK} has {len(videos)} videos.")
 
             # Find the game with the lowest video count
-            recommended_game_id = min(game_video_counts, key=game_video_counts.get)
+            recommended_game_id = min(game_video_counts, key=game_video_counts.get)  # type: ignore
             recommended_game = self.get_item_by_id(recommended_game_id)
             logger.info(
                 f"Recommended game for AMI {ami_id} is {recommended_game_id} with"
@@ -852,7 +904,7 @@ class VideoModel(DynamoDBModel[Video]):
             logger.error(f"Error creating video: {e}")
             raise
 
-    def update_video_size_and_duration(self, video_id: str, size: int, duration: Optional[int] = None):
+    def update_video_size_and_duration(self, video_id: str, size: int, duration: Optional[int] = None) -> None:
         try:
             update_expression = "SET size = :size"
             expression_attribute_values = {":size": size}

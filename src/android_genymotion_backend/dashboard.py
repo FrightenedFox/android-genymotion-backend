@@ -1,5 +1,5 @@
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import boto3
 import pandas as pd
@@ -55,7 +55,7 @@ def display_additional_statistics() -> None:
     total_videos = len(videos)
 
     # Calculate delta per last 24 hours
-    now = datetime.utcnow()
+    now = datetime.now(tz=UTC)
     this_week = now - timedelta(days=7)
 
     sessions_this_week = [s for s in sessions if datetime.fromisoformat(s.start_time) > this_week]
@@ -174,7 +174,6 @@ def display_running_sessions() -> None:
     sessions = st.session_state.sessions
     session_pings = st.session_state.session_pings
     amis = {ami.SK: ami for ami in st.session_state.amis}
-    session_model = SessionModel()
 
     # Create a mapping from session id to session ping
     session_ping_dict = {ping.SK: ping for ping in session_pings}
@@ -190,9 +189,7 @@ def display_running_sessions() -> None:
                 "Instance Type": session.instance.instance_type,
                 "Instance State": session.instance.instance_state,
                 "Instance IP": session.instance.instance_ip,
-                "Access URL": (
-                    f"https://genymotion:{session.instance.instance_id}@{session_model.domain_name(session.SK)}/"
-                ),
+                "Access URL": f"https://genymotion:{session.instance.instance_id}@{session.domain_name}/",
                 "User IP": session.user_ip,
                 "Browser Info": session.browser_info,
                 "Start Time": session.start_time,
