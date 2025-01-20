@@ -377,7 +377,7 @@ class SessionModel(DynamoDBModel[Session]):
             for s in sessions
             if datetime.fromisoformat(s.start_time).astimezone(UTC) > this_week and s.domain_name is not None
         ]
-        domain_counts: dict[str, int] = {}
+        domain_counts: dict[str, int] = {key: 0 for key in HOSTED_ZONES_REGISTRY.keys()}
         for session in sessions_this_week_with_domain_name:
             domain_name = self.get_hosted_zone_name(session.domain_name)
             domain_counts[domain_name] = domain_counts.get(domain_name, 0) + 1
