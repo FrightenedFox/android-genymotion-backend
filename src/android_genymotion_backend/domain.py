@@ -381,7 +381,10 @@ class SessionModel(DynamoDBModel[Session]):
         for session in sessions_this_week_with_domain_name:
             domain_name = self.get_hosted_zone_name(session.domain_name)
             domain_counts[domain_name] = domain_counts.get(domain_name, 0) + 1
-        least_used_domain_name = min(domain_counts, key=domain_counts.get)  # type: ignore
+        if domain_counts:
+            least_used_domain_name = min(domain_counts, key=domain_counts.get)  # type: ignore
+        else:
+            least_used_domain_name = "morskyi.org"
         logger.info("Returning least used domain name: %s", least_used_domain_name)
         return least_used_domain_name
 
