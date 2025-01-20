@@ -29,7 +29,7 @@ with col2:
         st.rerun()
 
 
-def load_data():
+def load_data() -> None:
     if "sessions" not in st.session_state:
         session_model = SessionModel()
         st.session_state.sessions = session_model.get_all_sessions_with_updated_info()
@@ -47,7 +47,7 @@ def load_data():
         st.session_state.amis = ami_model.list_all_amis()
 
 
-def display_additional_statistics():
+def display_additional_statistics() -> None:
     sessions = st.session_state.sessions
     videos = st.session_state.videos
 
@@ -56,27 +56,24 @@ def display_additional_statistics():
 
     # Calculate delta per last 24 hours
     now = datetime.utcnow()
-    last_24h = now - timedelta(hours=24)
+    this_week = now - timedelta(days=7)
 
-    sessions_last_24h = [s for s in sessions if datetime.fromisoformat(s.start_time) > last_24h]
-    total_sessions_last_24h = len(sessions_last_24h)
+    sessions_this_week = [s for s in sessions if datetime.fromisoformat(s.start_time) > this_week]
+    total_sessions_this_week = len(sessions_this_week)
 
-    videos_last_24h = [v for v in videos if datetime.fromisoformat(v.timestamp) > last_24h]
-    total_videos_last_24h = len(videos_last_24h)
+    videos_this_week = [v for v in videos if datetime.fromisoformat(v.timestamp) > this_week]
+    total_videos_this_week = len(videos_this_week)
 
     # Total unique user IPs
     user_ips = set(s.user_ip for s in sessions if s.user_ip)
     total_user_ips = len(user_ips)
 
-    user_ips_last_24h = set(s.user_ip for s in sessions_last_24h if s.user_ip)
-    total_user_ips_last_24h = len(user_ips_last_24h)
+    user_ips_this_week = set(s.user_ip for s in sessions_this_week if s.user_ip)
+    total_user_ips_this_week = len(user_ips_this_week)
 
     # Total running instances
     running_instances = [s for s in sessions if s.instance and s.instance.instance_state == "running"]
     total_running_instances = len(running_instances)
-
-    running_instances_last_24h = [s for s in sessions_last_24h if s.instance and s.instance.instance_state == "running"]
-    total_running_instances_last_24h = len(running_instances_last_24h)
 
     st.subheader("Database Statistics")
 
@@ -85,17 +82,17 @@ def display_additional_statistics():
     col1.metric(
         label="Total Sessions",
         value=total_sessions,
-        delta=f"{total_sessions_last_24h} in last 24h",
+        delta=f"{total_sessions_this_week} new this week",
     )
     col2.metric(
         label="Unique User IPs",
         value=total_user_ips,
-        delta=f"{total_user_ips_last_24h} new in last 24h",
+        delta=f"{total_user_ips_this_week} new this week",
     )
     col3.metric(
         label="Total Videos",
         value=total_videos,
-        delta=f"{total_videos_last_24h} in last 24h",
+        delta=f"{total_videos_this_week} new this week",
     )
     col4.metric(
         label="Running Instances",
@@ -104,7 +101,7 @@ def display_additional_statistics():
 
     # Additional statistics
     total_video_size = sum(v.size or 0 for v in videos)
-    total_video_size_last_24h = sum(v.size or 0 for v in videos_last_24h)
+    total_video_size_this_week = sum(v.size or 0 for v in videos_this_week)
 
     # Average video size
     if videos:
@@ -119,26 +116,41 @@ def display_additional_statistics():
             start = datetime.fromisoformat(s.start_time)
             end = datetime.fromisoformat(s.end_time)
             duration = (end - start).total_seconds()
+            if duration > 60 * 60 * 12:
+                # Ignore sessions longer than 24 hours, that is a bug
+                continue
             session_durations.append(duration)
     if session_durations:
         average_session_duration = sum(session_durations) / len(session_durations)
     else:
         average_session_duration = 0
 
+    average_session_duration_this_week = (
+        sum(
+            (datetime.fromisoformat(s.end_time) - datetime.fromisoformat(s.start_time)).total_seconds()
+            for s in sessions_this_week
+            if s.end_time
+        )
+        / len(sessions_this_week)
+        if sessions_this_week
+        else 0
+    )
+
     st.subheader("Additional Statistics")
     col5.metric(
         label="Total Video Size (GB)",
-        value=round(total_video_size / (1024**3), 2),
-        delta=f"{round(total_video_size_last_24h / (1024**3), 2)} GB in last 24h",
-        help=f"Total video size in the last 24 hours: {round(total_video_size_last_24h / (1024**3), 2)} GB",
+        value=round(total_video_size / (1024**3), 1),
+        delta=f"{round(total_video_size_this_week / (1024**3), 1)}GB recorded this week",
+        help=f"Total video size during this week: {round(total_video_size_this_week / (1024**3), 2)} GB",
     )
     col6.metric(
         label="Average Video Size (MB)",
-        value=round(average_video_size / (1024**2), 2),
+        value=round(average_video_size / (1024**2), 1),
     )
     col7.metric(
         label="Average Session Duration (minutes)",
-        value=round(average_session_duration / 60, 2),
+        value=int(round(average_session_duration / 60)),
+        delta=f"{int(round(average_session_duration_this_week / 60))} min during this week",
     )
 
     # Get AWS billing info
@@ -158,7 +170,7 @@ def display_additional_statistics():
         col8.error(f"Error retrieving AWS billing info: {e}")
 
 
-def display_running_sessions():
+def display_running_sessions() -> None:
     sessions = st.session_state.sessions
     session_pings = st.session_state.session_pings
     amis = {ami.SK: ami for ami in st.session_state.amis}
@@ -200,7 +212,7 @@ def display_running_sessions():
         st.subheader("No Running Instances")
 
 
-def display_video_statistics():
+def display_video_statistics() -> None:
     games = st.session_state.games
     videos = st.session_state.videos
     amis = {ami.SK: ami for ami in st.session_state.amis}
@@ -229,7 +241,7 @@ def display_video_statistics():
         st.subheader("No Game Data Available")
 
 
-def display_ami_statistics():
+def display_ami_statistics() -> None:
     amis = st.session_state.amis
     games = st.session_state.games
     videos = st.session_state.videos
@@ -260,7 +272,7 @@ def display_ami_statistics():
         st.subheader("No AMI Data Available")
 
 
-def display_video_downloads():
+def display_video_downloads() -> None:
     videos = st.session_state.videos
     games = {game.SK: game for game in st.session_state.games}
     amis = {ami.SK: ami for ami in st.session_state.amis}
@@ -337,7 +349,7 @@ def display_video_downloads():
         st.rerun()
 
 
-def main():
+def main() -> None:
     load_data()
     display_additional_statistics()
     st.write("Last updated at ", time.strftime("%Y-%m-%d %H:%M:%S"))
