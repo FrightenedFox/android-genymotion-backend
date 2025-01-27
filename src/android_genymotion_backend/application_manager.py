@@ -94,7 +94,8 @@ class ApplicationManager:
         """
         command = f"monkey -p {package_name} -c android.intent.category.LAUNCHER 1"
         try:
-            execute_shell_command(address, instance_id, command, logger)
+            for _ in range(3):
+                execute_shell_command(address, instance_id, command, logger)
         except Exception as e:
             import time
 
@@ -106,7 +107,8 @@ class ApplicationManager:
 
             time.sleep(7)
 
-            execute_shell_command(address, instance_id, command, logger)
+            for _ in range(3):
+                execute_shell_command(address, instance_id, command, logger)
             logger.info(f"Application {package_name} launched on {address} after reconfiguring SSL.")
         else:
             logger.info(f"Application {package_name} launched on {address}")
