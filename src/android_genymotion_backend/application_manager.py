@@ -368,20 +368,20 @@ class ApplicationManager:
         address, instance_id = addr_ins_id
 
         try:
-            # Enable kiosk mode
-            self.set_kiosk_mode(session_id, enabled=True)
-
             # Set screen orientation
             self._set_screen_orientation(address, instance_id, game.screen_orientation)
 
             # Enable or disable virtual keyboard
-            # self._set_virtual_keyboard(address, instance_id, virtual_keyboard)
+            self._set_virtual_keyboard(address, instance_id, virtual_keyboard)
 
             # Enable or disable WiFi
             self.set_internet_access(session_id, game.wifi_enabled)
 
             # Launch the game application
             self._launch_application(address, instance_id, game.android_package_name, session_id)
+
+            # Enable kiosk mode
+            # self.set_kiosk_mode(session_id, enabled=True)
 
             # Generate recording_id
             recording_id = ksuid().__str__()
@@ -484,7 +484,7 @@ class ApplicationManager:
             self._set_screen_orientation(address, instance_id, "vertical")
 
             # Disable kiosk mode
-            self.set_kiosk_mode(session_id, enabled=False)
+            # self.set_kiosk_mode(session_id, enabled=False)
 
             logger.info(f"Game stopped in session {session_id}")
         except Exception as e:
