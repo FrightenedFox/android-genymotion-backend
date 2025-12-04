@@ -60,11 +60,24 @@ class DynamoDBModel(Generic[T]):
 
     def get_all_items(self) -> List[T]:
         try:
-            response = self.table.query(
-                KeyConditionExpression=Key(self.partition_key_name).eq(self.partition_key_value)
-            )
-            items = response.get("Items", [])
-            logger.info(f"Retrieved {len(items)} items from {self.partition_key_value}")
+            items: List[dict[str, Any]] = []
+            exclusive_start_key = None
+
+            while True:
+                query_kwargs: dict[str, Any] = {
+                    "KeyConditionExpression": Key(self.partition_key_name).eq(self.partition_key_value)
+                }
+                if exclusive_start_key:
+                    query_kwargs["ExclusiveStartKey"] = exclusive_start_key
+
+                response = self.table.query(**query_kwargs)
+                items.extend(response.get("Items", []))
+                exclusive_start_key = response.get("LastEvaluatedKey")
+
+                if not exclusive_start_key:
+                    break
+
+            logger.info(f"Retrieved {len(items)} items from {self.partition_key_value} across all pages")
             return [self._deserialize(item) for item in items]
         except Exception as e:
             logger.error(f"Error retrieving items: {e}")
@@ -121,12 +134,27 @@ class DynamoDBModel(Generic[T]):
             else:
                 raise ValueError(f"Unsupported GSI name: {gsi_name}")
 
-            response = self.table.query(
-                IndexName=gsi_name,
-                KeyConditionExpression=Key(pk_name).eq(gsi_pk) & Key(sk_name).eq(gsi_sk),
+            items: List[dict[str, Any]] = []
+            exclusive_start_key = None
+
+            while True:
+                query_kwargs: dict[str, Any] = {
+                    "IndexName": gsi_name,
+                    "KeyConditionExpression": Key(pk_name).eq(gsi_pk) & Key(sk_name).eq(gsi_sk),
+                }
+                if exclusive_start_key:
+                    query_kwargs["ExclusiveStartKey"] = exclusive_start_key
+
+                response = self.table.query(**query_kwargs)
+                items.extend(response.get("Items", []))
+                exclusive_start_key = response.get("LastEvaluatedKey")
+
+                if not exclusive_start_key:
+                    break
+
+            logger.info(
+                f"Retrieved {len(items)} items for {gsi_name} with PK: {gsi_pk} and SK: {gsi_sk} across all pages"
             )
-            items = response.get("Items", [])
-            logger.info(f"Retrieved {len(items)} items for {gsi_name} with PK: {gsi_pk} and SK: {gsi_sk}")
             return [self._deserialize(item) for item in items]
         except Exception as e:
             logger.error(f"Error querying {gsi_name} with PK: {gsi_pk} and SK: {gsi_sk}: {e}")
