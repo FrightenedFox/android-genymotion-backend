@@ -31,12 +31,12 @@ T = TypeVar("T")
 
 HOSTED_ZONES_REGISTRY = {
     "morskyi.org": "Z02955531S24W8X23E32A",
-    "morskyi.net": "Z102646118DNFDHJHTKZ0",
-    "morskyi.de": "Z03496003NQE3RINZWYWK",
+    # "morskyi.net": "Z102646118DNFDHJHTKZ0",
+    # "morskyi.de": "Z03496003NQE3RINZWYWK",
     # "morskyi.name": "",
-    "krupina.me": "Z0563685CZ0PK5RBVKP",
-    "trip-search.de": "Z079972115WT0P3CYCNWW",
-    "trip-search.uk": "Z06167982MV44FK0EJWE",
+    # "krupina.me": "Z0563685CZ0PK5RBVKP",
+    # "trip-search.de": "Z079972115WT0P3CYCNWW",
+    # "trip-search.uk": "Z06167982MV44FK0EJWE",
 }
 
 
